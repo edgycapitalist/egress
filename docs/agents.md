@@ -77,8 +77,23 @@ engine or stall the run.
 
 - **In-process `FunctionTool`s** (`tools.py`) — the path the agents use today.
   No running server, no cloud, fully offline and unit-tested (`tools.py` wraps the
-  deterministic backend in `data.py`).
+  backend in `data.py`).
 - **FastMCP servers** (`server.py`) — the deployment surface, run as a path script.
+
+### Data backends — real feed with a synthetic fallback
+
+Each `data.py` is two-layered. With `ALPHAVANTAGE_API_KEY` set it serves **real
+Alpha Vantage data** — `TIME_SERIES_DAILY` for OHLCV + reference, `NEWS_SENTIMENT`
+for real headlines and per-article sentiment. Every response is cached in Postgres
+(plus an in-process memo) keyed by symbol+period, so a run makes at most a few real
+calls and every repeat run is served entirely from cache — essential on the free
+~25-calls/day tier. A hard budget guard caps real calls per run, tracks the running
+`N/25` daily total in a shared `mcp_api_usage` table, logs each real call, and on
+the daily limit or a rate-limit envelope **falls back to the synthesiser and never
+crashes**. With **no key** (the offline test suite and the deterministic baseline)
+the synthesiser serves everything with zero network — so the suite stays green and
+free. `get_sentiment(text)` stays a lexicon scorer: Alpha Vantage scores tickers,
+not the arbitrary text this tool is given.
 
 ### Name-collision note
 
