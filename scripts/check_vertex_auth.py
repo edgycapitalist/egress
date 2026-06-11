@@ -57,9 +57,7 @@ async def _agent_call(model: str) -> str:
 
     agent = LlmAgent(name="AuthProbe", model=model, instruction=PROMPT)
     runner = InMemoryRunner(agent=agent, app_name="egress-auth")
-    session = await runner.session_service.create_session(
-        app_name="egress-auth", user_id="local"
-    )
+    session = await runner.session_service.create_session(app_name="egress-auth", user_id="local")
     text = ""
     async for event in runner.run_async(
         user_id="local",
@@ -115,8 +113,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print("\n✓ Auth and quota confirmed. The agents will make real Gemini calls "
-          "with no further wiring.")
+    print(
+        "\n✓ Auth and quota confirmed. The agents will make real Gemini calls "
+        "with no further wiring."
+    )
     return 0
 
 

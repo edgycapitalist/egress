@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 
+from engine.schema import INVESTOR_TYPES, InvestorType, Stance
 from google.adk.agents import LlmAgent, ParallelAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
@@ -27,7 +28,6 @@ from agents.common.state import (
     TICK_WINDOW_INDEX,
     stance_key,
 )
-from engine.schema import INVESTOR_TYPES, InvestorType, Stance
 
 
 def _context_block(ctx: ReadonlyContext) -> str:

@@ -14,10 +14,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
-
 from engine.schema import INVESTOR_TYPES, RunConfig
 from mcp.market_data.data import get_instrument_reference
+from pydantic import BaseModel, Field
 
 # Default run mechanics the model should not have to think about.
 DEFAULT_POPULATION = 5000

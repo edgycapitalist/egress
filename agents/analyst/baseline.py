@@ -9,7 +9,7 @@ run still produces the narrative panel the product shows. The live Gemini analys
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -75,9 +75,7 @@ class BaselineAnalystAgent(BaseAgent):
     def __init__(self, name: str = "BaselineAnalyst") -> None:
         super().__init__(name=name)
 
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
         scenario = state.get(SCENARIO_CONFIG) or {}
         metrics = state.get(RUN_METRICS) or {}

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from engine.schema import RunConfig
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
@@ -32,7 +33,6 @@ from agents.common.state import (
 )
 from agents.orchestrator.agent import build_orchestrator
 from agents.orchestrator.engine_bridge import close_handle
-from engine.schema import RunConfig
 
 APP_NAME = "egress"
 

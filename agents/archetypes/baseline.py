@@ -15,15 +15,15 @@ proxy of the price drawdown, since stress is not part of the public market state
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
+from engine.baseline import baseline_stances
+from engine.schema import INVESTOR_TYPES
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
 from agents.common.state import MARKET_STATE, SCENARIO_CONFIG, stance_key
-from engine.baseline import baseline_stances
-from engine.schema import INVESTOR_TYPES
 
 
 def _stress_proxy(drop: float, halted: bool) -> float:
@@ -40,9 +40,7 @@ class BaselineStancesAgent(BaseAgent):
     def __init__(self, name: str = "BaselineStances") -> None:
         super().__init__(name=name)
 
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
         market = state.get(MARKET_STATE) or {}
         scenario = state.get(SCENARIO_CONFIG) or {}
