@@ -15,7 +15,9 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /app
 RUN pip install --upgrade pip
-COPY pyproject.toml README.md ./
+# LICENSE is referenced by pyproject (license = { file = "LICENSE" }), so the
+# wheel build needs it present.
+COPY pyproject.toml README.md LICENSE ./
 
 # ---- Engine service (deterministic core, no LLM) — Phase 1 ----
 FROM base AS engine

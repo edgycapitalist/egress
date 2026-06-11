@@ -1,0 +1,8 @@
+# Build only the gateway stage (BuildKit prunes the unused engine/mcp stages).
+#   gcloud builds submit --config cloudbuild.gateway.yaml --substitutions=_IMAGE=...
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_IMAGE}', '--target', 'gateway', '.']
+images:
+  - '${_IMAGE}'
