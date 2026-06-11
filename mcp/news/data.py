@@ -262,19 +262,24 @@ def _av_time_range(period: str) -> tuple[str | None, str | None]:
 
 def _av_news(symbol: str, period: str) -> dict | None:
     """Cached, contract-shaped real headlines for ``symbol`` over ``period``."""
-    cache_key = f"{symbol}:{period}"
+    # Normalise the cache key: the LLM archetypes pass free-form period strings
+    # ("2022-12", but also "1d", "session", "current_session"…). Anything that does
+    # not parse to a real date range collapses to one canonical "recent" key, so a
+    # run makes a single recent-news call instead of one per invented string.
+    time_from, time_to = _av_time_range(period)
+    canon = period if time_from else "recent"
+    cache_key = f"{symbol}:{canon}"
     cached = _cache_get("av_news", cache_key)
     if cached is not None:
         return cached
 
     params = {"function": "NEWS_SENTIMENT", "tickers": symbol, "sort": "RELEVANCE", "limit": "50"}
-    time_from, time_to = _av_time_range(period)
     if time_from:
         params["time_from"] = time_from
     if time_to:
         params["time_to"] = time_to
 
-    raw = _real_call(params, f"NEWS_SENTIMENT {symbol} ({period})")
+    raw = _real_call(params, f"NEWS_SENTIMENT {symbol} ({canon})")
     feed = (raw or {}).get("feed")
     if not feed:
         return None
@@ -309,7 +314,7 @@ def _av_news(symbol: str, period: str) -> dict | None:
     overall = round(sum(scores) / len(scores), 3) if scores else 0.0
     payload = {
         "symbol": symbol,
-        "period": period,
+        "period": canon,
         "headlines": headlines,
         "overall_sentiment": overall,
         "sentiment_label": _label(overall),
