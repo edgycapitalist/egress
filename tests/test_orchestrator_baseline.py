@@ -33,7 +33,7 @@ async def test_baseline_pipeline_runs_end_to_end() -> None:
 
     # Contract outputs are all present.
     assert res["market_state"] is not None
-    assert res["analysis"] and "ACME" in res["analysis"]
+    assert res["analysis"] and "CVNA" in res["analysis"]
     assert Path(res["replay_ref"]).exists()
 
 
@@ -85,4 +85,5 @@ def test_render_summary_reads_metrics() -> None:
         "time_to_exit_ticks": None,
     }
     text = render_summary(scenario, metrics)
-    assert "ACME" in text and "30%" in text and "halt" in text.lower()
+    symbol = flagship_scenario().instrument.symbol
+    assert symbol in text and "30%" in text and "halt" in text.lower()

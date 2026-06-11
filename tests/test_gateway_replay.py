@@ -48,6 +48,7 @@ def test_cached_websocket_run_offline() -> None:
         ws.send_json({"mode": "cached", "pace_ms": 0})
         meta = ws.receive_json()
         assert meta["type"] == "meta" and meta["source"] == "cached"
+        symbol = meta["config"]["instrument"]["symbol"]
 
         ticks: list[dict] = []
         analysis = None
@@ -67,7 +68,7 @@ def test_cached_websocket_run_offline() -> None:
 
     assert ticks, "expected tick frames"
     assert metrics and 0.0 <= metrics["fill_rate"] <= 1.0
-    assert analysis and "ACME" in analysis
+    assert analysis and symbol in analysis  # the analyst names the replay's instrument
 
 
 def test_health_endpoint() -> None:
