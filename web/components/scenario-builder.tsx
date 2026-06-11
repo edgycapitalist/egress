@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Play, RotateCcw, Database, Radio } from "lucide-react";
 import {
   INVESTOR_TYPES,
-  INVESTOR_SHORT,
+  INVESTOR_LABELS,
   investorColor,
   type InvestorType,
   type Levers,
@@ -12,7 +12,7 @@ import {
 import type { RunStatus } from "@/lib/useRun";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { cn, fmtCompact, fmtPct } from "@/lib/utils";
+import { cn, fmtInt, fmtPct } from "@/lib/utils";
 
 const EXIT_SPEEDS: { key: string; label: string }[] = [
   { key: "patient", label: "Patient" },
@@ -146,16 +146,35 @@ export function ScenarioBuilder({
         </div>
 
         {/* Position size */}
-        <Slider
-          label="Position size"
-          display={`${fmtCompact(levers.position_size)} sh`}
-          min={50_000}
-          max={1_000_000}
-          step={10_000}
-          value={levers.position_size}
-          onChange={(v) => set({ position_size: v })}
-          className={cached ? "pointer-events-none opacity-55" : ""}
-        />
+        <div className={cn("space-y-1", cached && "pointer-events-none opacity-55")}>
+          <Slider
+            label="Position size"
+            display={`${fmtInt(levers.position_size)} shares`}
+            min={50_000}
+            max={1_000_000}
+            step={10_000}
+            value={levers.position_size}
+            onChange={(v) => set({ position_size: v })}
+          />
+          <Caption>The number of shares you are trying to sell.</Caption>
+        </div>
+
+        {/* Market participants (population_size) */}
+        <div className={cn("space-y-1", cached && "pointer-events-none opacity-55")}>
+          <Slider
+            label="Market participants"
+            display={`${fmtInt(levers.population_size)} agents`}
+            min={1_000}
+            max={20_000}
+            step={500}
+            value={levers.population_size}
+            onChange={(v) => set({ population_size: v })}
+          />
+          <Caption>
+            How many traders make up the market. More participants = a deeper, more
+            liquid market that absorbs the same order more easily.
+          </Caption>
+        </div>
 
         {/* Exit speed */}
         <div className={cn("space-y-2", cached && "pointer-events-none opacity-55")}>
@@ -172,12 +191,16 @@ export function ScenarioBuilder({
 
         {/* Crowding mix */}
         <div className={cn("space-y-3", cached && "pointer-events-none opacity-55")}>
-          <Label hint="who else is crowded into this trade">Crowding mix</Label>
+          <Label>Crowding mix</Label>
+          <Caption>
+            Each investor type&apos;s share of the trading crowd — i.e. of the market.
+            The shares are normalised to total 100%.
+          </Caption>
           {INVESTOR_TYPES.map((t) => (
             <Slider
               key={t}
-              label={INVESTOR_SHORT[t]}
-              display={fmtPct((levers.crowding_mix[t] ?? 0) / mixTotal, 0)}
+              label={INVESTOR_LABELS[t]}
+              display={`${fmtPct((levers.crowding_mix[t] ?? 0) / mixTotal, 0)} of market`}
               min={0}
               max={40}
               step={1}
@@ -214,6 +237,10 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
       {hint ? <span className="text-[11px] text-ink-faint">· {hint}</span> : null}
     </div>
   );
+}
+
+function Caption({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] leading-relaxed text-ink-faint">{children}</p>;
 }
 
 function Divider() {

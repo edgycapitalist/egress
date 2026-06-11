@@ -1,5 +1,5 @@
 import type { TickEvent } from "@/lib/types";
-import { cn, fmtCompact, fmtPrice } from "@/lib/utils";
+import { cn, fmtInt, fmtPrice } from "@/lib/utils";
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
   if (values.length < 2) return <div className="h-8" />;
@@ -40,7 +40,7 @@ function DepthBar({
         )}
       >
         <span className="text-[11px] uppercase tracking-wider text-ink-faint">{label}</span>
-        <span className="tnum text-[13px] text-ink">{fmtCompact(value)}</span>
+        <span className="tnum text-[13px] text-ink">{fmtInt(value)} shares</span>
       </div>
       <div className={cn("h-2 w-full overflow-hidden rounded-full bg-surface-2")}>
         <div

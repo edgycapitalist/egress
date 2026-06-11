@@ -20,7 +20,7 @@ export function FillProgress({
       <div className="flex items-baseline justify-between">
         <span className="tnum text-[20px] text-ink">{fmtPct(pct, 0)}</span>
         <span className="tnum text-[12px] text-ink-faint">
-          {fmtInt(filled)} / {fmtInt(target)}
+          {fmtInt(filled)} / {fmtInt(target)} shares
         </span>
       </div>
       <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-surface-2">

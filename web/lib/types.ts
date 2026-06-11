@@ -102,9 +102,22 @@ export type Frame =
 export interface Levers {
   scenario_text: string;
   position_size: number;
+  population_size: number;
   exit_speed: string;
   crowding_mix: Record<InvestorType, number>;
   seed?: number;
+}
+
+// Real sourced inputs for an instrument (from the gateway's /api/instrument).
+export interface SourcedInput {
+  symbol: string;
+  name: string | null;
+  reference_price: number;
+  adv: number;
+  free_float: number;
+  realized_vol_daily: number | null;
+  bars: number;
+  source: "alphavantage" | "synthetic";
 }
 
 export const INVESTOR_LABELS: Record<InvestorType, string> = {

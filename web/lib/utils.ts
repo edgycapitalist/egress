@@ -26,4 +26,8 @@ export const fmtCompact = (n: number | null | undefined) => {
   return `${Math.round(n)}`;
 };
 
+// Spell out units: "250,000 shares", not "250k sh".
+export const fmtShares = (n: number | null | undefined) =>
+  n == null ? "—" : `${fmtInt(n)} shares`;
+
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
