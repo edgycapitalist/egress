@@ -93,8 +93,8 @@ export function ScenarioBuilder({
     set({ crowding_mix: { ...levers.crowding_mix, [t]: v } });
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-1">
         {/* Mode */}
         <div className="space-y-2">
           <Label>Run source</Label>
@@ -185,6 +185,10 @@ export function ScenarioBuilder({
             onChange={(v) => set({ exit_speed: v })}
             disabled={busy}
           />
+          <Caption>
+            How aggressively you sell into each tick&apos;s volume. Applies to Live runs
+            only — cached mode replays a fixed recording.
+          </Caption>
         </div>
 
         <Divider />
@@ -212,8 +216,8 @@ export function ScenarioBuilder({
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="border-t border-line p-4">
+      {/* Actions — pinned, always visible */}
+      <div className="shrink-0 border-t border-line bg-surface/95 p-4">
         <div className="flex gap-2">
           <Button onClick={onRun} disabled={busy} className="flex-1" size="lg">
             <Play className="h-4 w-4" strokeWidth={2.2} />
