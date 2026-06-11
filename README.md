@@ -57,7 +57,12 @@ make init                 # install deps + create .env from the example
 # edit .env: set GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION (see auth note)
 make start                # bring up Postgres + Redis locally
 make test                 # offline test suite
+make demo                 # run the deterministic engine on the flagship scenario
 ```
+
+`make demo` runs a crowded mid-cap through a downgrade shock with no LLM and no
+cloud: it prints the metrics (fill rate, slippage, stuck %, halts) and writes an
+NDJSON replay under `runs/`. This is the Phase-1 backbone of the live demo.
 
 The deterministic baseline (`DETERMINISTIC_BASELINE=true`) runs the whole
 simulation with zero LLM calls, so development costs nothing.
@@ -74,7 +79,7 @@ set in `.env`. An AI Studio `GOOGLE_API_KEY` is never used. Details in
 Built in phases (see `AGENTS.md` §11):
 
 - [x] **Phase 0** — Scaffold: repo structure, tooling, and the boundary contract.
-- [ ] **Phase 1** — Deterministic engine MVP (order book, population, metrics, NDJSON record).
+- [x] **Phase 1** — Deterministic engine MVP (order book, population, metrics, NDJSON record). Run `make demo`.
 - [ ] **Phase 2** — ADK orchestration (scenario author, archetypes, simulate loop, analyst) + MCP servers.
 - [ ] **Phase 3** — Frontend + FastAPI gateway with WebSocket streaming.
 - [ ] **Phase 4** — Calibration critic + backtest against a real episode.

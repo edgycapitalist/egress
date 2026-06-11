@@ -67,10 +67,11 @@ make deploy          # Phase 5
 
 ## Build phases
 
-Follow the order in `AGENTS.md` §11 strictly. **Phase 0 (this scaffold) is
-done.** Phase 1 is the deterministic engine; do not start agent or cloud work
-until a cascade runs end to end with a recorded NDJSON stream and printed
-metrics.
+Follow the order in `AGENTS.md` §11 strictly. **Phases 0 and 1 are done** — the
+deterministic engine runs a cascade end to end (`make demo` / `python -m engine`),
+writes a recorded NDJSON stream, and prints metrics, with no LLM and no cloud.
+**Phase 2 is next**: wire the ADK archetype agents to produce the six stances that
+`Engine.advance` already consumes. Keep Gemini out of the per-tick loop.
 
 ## Conventions
 

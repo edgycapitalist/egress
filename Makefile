@@ -3,7 +3,7 @@
 # costs nothing and needs no cloud credentials.
 
 .DEFAULT_GOAL := help
-.PHONY: help init start stop restart test lint fmt build eval deploy check-prereqs
+.PHONY: help init start stop restart demo test lint fmt build eval deploy check-prereqs
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -23,6 +23,9 @@ stop: ## Stop the local data layer
 	$(COMPOSE) down
 
 restart: stop start ## Restart the local data layer
+
+demo: ## Run the deterministic engine on the flagship scenario (no LLM, no cloud)
+	$(PYTHON) -m engine
 
 test: ## Run the offline test suite (no network, no credentials)
 	$(PYTHON) -m pytest
