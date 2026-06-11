@@ -67,11 +67,24 @@ make deploy          # Phase 5
 
 ## Build phases
 
-Follow the order in `AGENTS.md` §11 strictly. **Phases 0 and 1 are done** — the
-deterministic engine runs a cascade end to end (`make demo` / `python -m engine`),
-writes a recorded NDJSON stream, and prints metrics, with no LLM and no cloud.
-**Phase 2 is next**: wire the ADK archetype agents to produce the six stances that
-`Engine.advance` already consumes. Keep Gemini out of the per-tick loop.
+Follow the order in `AGENTS.md` §11 strictly. **Phases 0, 1, and 2 are done.**
+
+- **Phase 1** — the deterministic engine runs a cascade end to end (`make demo` /
+  `python -m engine`), writes a recorded NDJSON stream, and prints metrics, with no
+  LLM and no cloud.
+- **Phase 2** — the ADK orchestration layer (`agents/`) and the two MCP servers
+  (`mcp/`). Six Tier-A archetype `LlmAgent`s (Gemini via Vertex) run as a
+  `ParallelAgent`, each writing only its own `*_stance` key; a `SequentialAgent`
+  orchestrator runs scenario-author → setup → simulate `LoopAgent` → finalize →
+  analyst. The live Vertex path is the product; **baseline mode swaps the stance
+  producer and analyst for deterministic stand-ins** so the whole pipeline runs
+  with zero LLM calls and is fully testable offline (`make demo-agents`, the
+  `test_orchestrator_baseline` suite). Gemini is never in the per-tick loop —
+  stances refresh once per window. Confirm Vertex auth/quota with
+  `make auth-check` once ADC + a project are set.
+
+**Phase 3 is next**: the Next.js frontend and the FastAPI gateway (WebSocket
+streaming of tick telemetry, A2A routing to the orchestrator).
 
 ## Conventions
 

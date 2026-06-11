@@ -58,14 +58,26 @@ make init                 # install deps + create .env from the example
 make start                # bring up Postgres + Redis locally
 make test                 # offline test suite
 make demo                 # run the deterministic engine on the flagship scenario
+make demo-agents          # run the full ADK orchestration in baseline mode (no LLM)
+make auth-check           # confirm Gemini works via Vertex AI (needs ADC + project)
 ```
 
 `make demo` runs a crowded mid-cap through a downgrade shock with no LLM and no
 cloud: it prints the metrics (fill rate, slippage, stuck %, halts) and writes an
 NDJSON replay under `runs/`. This is the Phase-1 backbone of the live demo.
 
+`make demo-agents` drives the **full ADK lifecycle** — scenario setup, the
+simulate `LoopAgent`, finalize, and the analyst — through the real ADK `Runner`,
+with the archetype and analyst LLMs swapped for deterministic stand-ins. It runs
+end to end with zero LLM calls, proving the orchestration produces a cascade,
+metrics, a replay, and a plain-language narrative without touching Gemini.
+
 The deterministic baseline (`DETERMINISTIC_BASELINE=true`) runs the whole
-simulation with zero LLM calls, so development costs nothing.
+simulation with zero LLM calls, so development costs nothing. The **live Vertex
+path is the product**; baseline is the swappable offline/test mode. Once you have
+Application Default Credentials and a project set, `make auth-check` makes one
+real Gemini call to confirm auth and quota; after that the agents call Gemini with
+no further wiring.
 
 ## Authentication
 
@@ -80,7 +92,7 @@ Built in phases (see `AGENTS.md` §11):
 
 - [x] **Phase 0** — Scaffold: repo structure, tooling, and the boundary contract.
 - [x] **Phase 1** — Deterministic engine MVP (order book, population, metrics, NDJSON record). Run `make demo`.
-- [ ] **Phase 2** — ADK orchestration (scenario author, archetypes, simulate loop, analyst) + MCP servers.
+- [x] **Phase 2** — ADK orchestration (scenario author, six archetype mood-setters, simulate loop, analyst) + the two MCP servers. Run `make demo-agents`.
 - [ ] **Phase 3** — Frontend + FastAPI gateway with WebSocket streaming.
 - [ ] **Phase 4** — Calibration critic + backtest against a real episode.
 - [ ] **Phase 4A** — Memory (scenario history, then calibration memory).
