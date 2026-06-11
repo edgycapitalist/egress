@@ -18,12 +18,38 @@ from google.adk.agents.callback_context import CallbackContext
 from pydantic import ValidationError
 
 from agents.common.env import seed
-from agents.common.state import INSTRUMENT_REFERENCE, SCENARIO_CONFIG
+from agents.common.state import (
+    INSTRUMENT_REFERENCE,
+    SCENARIO_BRIEF,
+    SCENARIO_CONFIG,
+    SCENARIO_RAW,
+)
 from agents.scenario_author.validation import ScenarioDraft, build_run_config
 
 # The LLM writes its draft here; the callback finalises it into SCENARIO_CONFIG.
 SCENARIO_DRAFT = "scenario_draft"
 SCENARIO_ERROR = "scenario_error"
+
+
+def compose_brief(draft: dict, raw_text: str, config) -> str:
+    """The author's structured read of the crisis, for the archetype mood-setters.
+
+    Combines the model's one-line rationale, the stress events it scheduled (the
+    shock notes), and a faithful trimmed echo of the user's own words — so the
+    described situation, not just the ticker, drives each archetype's stance.
+    """
+    parts: list[str] = []
+    rationale = (draft.get("rationale") or "").strip() if isinstance(draft, dict) else ""
+    if rationale:
+        parts.append(rationale)
+    notes = [s.note for s in config.shock_schedule if getattr(s, "note", "")]
+    if notes:
+        parts.append("Stress events: " + "; ".join(notes) + ".")
+    raw = (raw_text or "").strip()
+    if raw:
+        trimmed = raw if len(raw) <= 320 else raw[:317].rsplit(" ", 1)[0] + "…"
+        parts.append(f'User described: "{trimmed}"')
+    return "\n".join(parts)
 
 INSTRUCTION = """\
 You are the Scenario Author for Egress, a crisis-exit market simulator. The user
@@ -68,6 +94,7 @@ def _finalize_scenario(seed_value: int):
             return None
         state[SCENARIO_CONFIG] = config.model_dump()
         state[INSTRUMENT_REFERENCE] = reference
+        state[SCENARIO_BRIEF] = compose_brief(draft, state.get(SCENARIO_RAW, ""), config)
         return None
 
     return callback

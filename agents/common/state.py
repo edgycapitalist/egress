@@ -15,6 +15,7 @@ from engine.schema import INVESTOR_TYPES, STANCE_KEYS, InvestorType
 # Inputs / scenario
 SCENARIO_RAW = "scenario_raw"  # str, user's plain-language request
 SCENARIO_CONFIG = "scenario_config"  # RunConfig (scenario_author output_key)
+SCENARIO_BRIEF = "scenario_brief"  # str, the author's structured read of the crisis
 INSTRUMENT_REFERENCE = "instrument_reference"  # object, from Market Data MCP
 
 # Per-window archetype stances — one distinct key per type (no parallel races).

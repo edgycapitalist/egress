@@ -33,7 +33,9 @@ from agents.common.env import fast_model
 from agents.common.state import (
     LATEST_NEWS,
     MARKET_STATE,
+    SCENARIO_BRIEF,
     SCENARIO_CONFIG,
+    SCENARIO_RAW,
     TICK_WINDOW_INDEX,
     stance_key,
 )
@@ -105,6 +107,11 @@ def _context_block(ctx: ReadonlyContext) -> str:
     if isinstance(scenario, dict):
         instrument = scenario.get("instrument", {}).get("symbol", instrument)
 
+    # The scenario author's structured read of the crisis (rationale + stress
+    # events + the user's words), falling back to the raw user text. This is what
+    # makes the *described* situation drive the stance, not just the ticker.
+    brief = state.get(SCENARIO_BRIEF) or state.get(SCENARIO_RAW) or "(no scenario brief)"
+
     market = _summary(
         MARKET_STATE,
         ("tick", "last_price", "best_bid", "best_ask", "remaining_qty", "halted"),
@@ -115,10 +122,13 @@ def _context_block(ctx: ReadonlyContext) -> str:
     return (
         f"\n\n--- Live run context (window {window}) ---\n"
         f"Instrument: {instrument}\n"
+        f"Scenario & stress (the situation to react to):\n{brief}\n\n"
         f"Market state: {market}\n"
         f"Latest news (session): {news}\n"
-        "If market state shows the price already well below the reference price, or "
-        "the news sentiment is strongly negative, your stance should reflect that."
+        "Set your levers to fit THIS scenario and the current tape. Call the news "
+        "tools for the latest headlines. If the described crisis is severe, the news "
+        "sentiment is strongly negative, or the price is already well below the "
+        "reference price, your stance should reflect that — do not stay artificially calm."
     )
 
 
