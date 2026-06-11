@@ -1,0 +1,17 @@
+# Build the frontend image with the gateway URL baked in (NEXT_PUBLIC_* are
+# inlined at build time). Invoked from the web/ directory as the build context:
+#   gcloud builds submit web --config web/cloudbuild.yaml \
+#     --substitutions=_IMAGE=...,_WS=wss://.../ws/run,_HTTP=https://...
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '${_IMAGE}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_GATEWAY_WS=${_WS}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_GATEWAY_HTTP=${_HTTP}'
+      - '.'
+images:
+  - '${_IMAGE}'

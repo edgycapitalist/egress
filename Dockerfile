@@ -39,8 +39,18 @@ EXPOSE 8102
 CMD ["python", "-m", "mcp.news.server"]
 
 # ---- Gateway / BFF (FastAPI, WebSocket hub, A2A) — Phase 3 ----
+# The gateway streams the cached NDJSON replay and exposes /api/instrument via the
+# Market Data MCP, so it needs engine + mcp + the committed replay. The agents/ and
+# memory/ trees are copied only to satisfy the wheel's package list; the live
+# (Gemini) path and its heavy ADK deps are intentionally not installed here.
 FROM base AS gateway
+COPY agents/ ./agents/
+COPY engine/ ./engine/
+COPY mcp/ ./mcp/
+COPY memory/ ./memory/
 COPY gateway/ ./gateway/
+COPY docs/replays/ ./docs/replays/
 RUN pip install ".[gateway]"
 EXPOSE 8080
-CMD ["uvicorn", "gateway.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Respect Cloud Run's injected $PORT (defaults to 8080 locally).
+CMD ["sh", "-c", "uvicorn gateway.app:app --host 0.0.0.0 --port ${PORT:-8080}"]
