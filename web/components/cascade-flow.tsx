@@ -33,7 +33,15 @@ export function CascadeFlow({ ticks, totalTicks }: { ticks: TickEvent[]; totalTi
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[150px] w-full">
         {ticks.length > 1
           ? bands.map((b) => (
-              <path key={b.type} d={b.d} fill={investorColor(b.type)} fillOpacity={0.85} />
+              <path
+                key={b.type}
+                d={b.d}
+                fill={investorColor(b.type)}
+                fillOpacity={0.92}
+                stroke="var(--color-bg)"
+                strokeWidth={0.5}
+                vectorEffect="non-scaling-stroke"
+              />
             ))
           : null}
       </svg>
@@ -41,10 +49,10 @@ export function CascadeFlow({ ticks, totalTicks }: { ticks: TickEvent[]; totalTi
         {INVESTOR_TYPES.map((t) => (
           <div key={t} className="flex items-center gap-1.5">
             <span
-              className="h-2 w-2 rounded-[2px]"
+              className="h-2.5 w-2.5 rounded-[3px]"
               style={{ background: investorColor(t) }}
             />
-            <span className="text-[11px] text-ink-muted">{INVESTOR_SHORT[t]}</span>
+            <span className="text-[11.5px] font-medium text-ink">{INVESTOR_SHORT[t]}</span>
           </div>
         ))}
       </div>

@@ -5,8 +5,12 @@
   A near-black, faintly cool base; one neutral scale; colour reserved for data
   semantics: warm for selling/stress, cool for buying/fills, amber for a halt.
   Numbers are tabular mono throughout — this is a trading tool.
+
+  `static` so every token is emitted even when it is only referenced via inline
+  `var(--color-…)` (e.g. the SVG fills in the cascade flow), not a utility class.
+  Without it Tailwind tree-shakes those vars and the fills fall back to black.
 */
-@theme {
+@theme static {
   --color-bg: #0a0b0e;
   --color-surface: #101218;
   --color-surface-2: #15181f;
@@ -26,12 +30,12 @@
   --color-accent: #6e8bff; /* interactive accent, restrained */
 
   /* Investor-type categorical scale (warm = sell pressure, cool = support). */
-  --color-forced_seller: #e5484d;
-  --color-panic_seller: #f2734b;
-  --color-trend_follower: #e0a020;
-  --color-bargain_hunter: #30a46c;
-  --color-market_maker: #4aa3c7;
-  --color-holder: #6b7280;
+  --color-forced_seller: #f0565b;
+  --color-panic_seller: #f7864e;
+  --color-trend_follower: #ecb235;
+  --color-bargain_hunter: #3cc17e;
+  --color-market_maker: #56b5d8;
+  --color-holder: #9aa3b2;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;

@@ -88,7 +88,7 @@ export default function Page() {
   return (
     <div className="mx-auto flex min-h-screen max-w-[1500px] flex-col px-5 py-5 lg:px-7">
       {/* Header */}
-      <header className="mb-5 flex items-center justify-between">
+      <header className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Logo />
           <div>
@@ -109,9 +109,9 @@ export default function Page() {
       </header>
 
       {/* Body */}
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[358px_1fr]">
+      <div className="grid flex-1 grid-cols-1 gap-3 lg:grid-cols-[358px_1fr]">
         {/* Builder */}
-        <Card className="flex flex-col overflow-hidden lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+        <Card className="flex flex-col overflow-hidden lg:sticky lg:top-5 lg:max-h-[calc(100vh-2.5rem)]">
           <CardHeader title="Scenario" hint="describe it, set the levers, run" />
           <ScenarioBuilder
             state={builder}
@@ -124,7 +124,7 @@ export default function Page() {
         </Card>
 
         {/* Visualisation */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           {state.error ? (
             <div className="flex items-center gap-2 rounded-[var(--radius)] border border-sell/30 bg-sell/10 px-4 py-3 text-[13px] text-sell">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -174,7 +174,7 @@ export default function Page() {
                 <CascadeFlow ticks={state.ticks} totalTicks={state.totalTicks} />
               </Card>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Card className="fadeup overflow-hidden">
                   <CardHeader title="Order book" hint="liquidity draining" />
                   <OrderBook ticks={state.ticks} />
@@ -202,7 +202,7 @@ export default function Page() {
         </div>
       </div>
 
-      <footer className="mt-6 flex items-center justify-between text-[11px] text-ink-faint">
+      <footer className="mt-5 flex items-center justify-between text-[11px] text-ink-faint">
         <span>
           Deterministic engine · ADK agents (Gemini via Vertex AI) · the model is one part of the
           system, not the engine.

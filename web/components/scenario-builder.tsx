@@ -94,7 +94,7 @@ export function ScenarioBuilder({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4 pt-1">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4 pt-1">
         {/* Mode */}
         <div className="space-y-2">
           <Label>Run source</Label>
