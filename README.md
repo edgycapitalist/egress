@@ -62,6 +62,20 @@ make demo-agents          # run the full ADK orchestration in baseline mode (no 
 make auth-check           # confirm Gemini works via Vertex AI (needs ADC + project)
 ```
 
+### Run the app (gateway + frontend)
+
+```bash
+make gateway              # FastAPI WebSocket hub on :8000 (cached replay needs no cloud)
+make web-install          # one-time: install the frontend's npm deps
+make web                  # Next.js dev server on :3000  → open http://localhost:3000
+```
+
+The UI boots in **cached** mode and replays the flagship cascade with no live
+call, so the demo always runs offline. Flip the toggle to **live** to run a fresh
+simulation through the ADK orchestrator (deterministic by default; real Gemini
+when Vertex is configured and `EGRESS_LIVE_GEMINI=true`), and vary the position
+size, exit speed, and crowding mix to find where the exit closes.
+
 `make demo` runs a crowded mid-cap through a downgrade shock with no LLM and no
 cloud: it prints the metrics (fill rate, slippage, stuck %, halts) and writes an
 NDJSON replay under `runs/`. This is the Phase-1 backbone of the live demo.
@@ -93,7 +107,7 @@ Built in phases (see `AGENTS.md` §11):
 - [x] **Phase 0** — Scaffold: repo structure, tooling, and the boundary contract.
 - [x] **Phase 1** — Deterministic engine MVP (order book, population, metrics, NDJSON record). Run `make demo`.
 - [x] **Phase 2** — ADK orchestration (scenario author, six archetype mood-setters, simulate loop, analyst) + the two MCP servers. Run `make demo-agents`.
-- [ ] **Phase 3** — Frontend + FastAPI gateway with WebSocket streaming.
+- [x] **Phase 3** — Next.js frontend + FastAPI gateway with batched WebSocket tick streaming, and a cached-vs-live toggle. Run `make gateway` + `make web`. See [`docs/frontend.md`](./docs/frontend.md).
 - [ ] **Phase 4** — Calibration critic + backtest against a real episode.
 - [ ] **Phase 4A** — Memory (scenario history, then calibration memory).
 - [ ] **Phase 5** — Deploy to Google Cloud (Agent Engine + Cloud Run + Terraform).

@@ -32,6 +32,7 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+next-env.d.ts
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
@@ -40,7 +41,9 @@ pnpm-debug.log*
 # Recorded NDJSON runs and cached replays are generated, not source.
 runs/
 *.ndjson
-replays/
+/replays/
+# …but a curated cached replay committed under docs/ is a source asset (the
+# offline demo streams it), so keep those.
 !docs/**/*.ndjson
 
 # ---- Terraform ----
