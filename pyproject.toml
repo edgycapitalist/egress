@@ -73,6 +73,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q"
+filterwarnings = [
+    # The ADK workflow agents (Sequential/Loop/Parallel) are required by the
+    # competition rubric (AGENTS.md §4); ADK 2.2 deprecates them. Silence the
+    # expected notice so the suite output stays readable.
+    "ignore:.*(SequentialAgent|LoopAgent|ParallelAgent) is deprecated.*:DeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.13"

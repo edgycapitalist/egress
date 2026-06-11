@@ -21,10 +21,15 @@ only ever carries the contract shapes.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncGenerator
 
+from engine.baseline import baseline_stances
+from engine.core import Engine
+from engine.replay.recorder import Recorder
+from engine.schema import INVESTOR_TYPES, RunConfig, Stance
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
@@ -37,10 +42,6 @@ from agents.common.state import (
     TICK_WINDOW_INDEX,
     stance_key,
 )
-from engine.baseline import baseline_stances
-from engine.core import Engine
-from engine.replay.recorder import Recorder
-from engine.schema import INVESTOR_TYPES, RunConfig, Stance
 
 # Where NDJSON replays are written for live agent runs.
 REPLAY_DIR = Path("runs")
@@ -66,10 +67,8 @@ def close_handle(run_id: str) -> None:
     """Close the recorder and drop the handle. Safe to call more than once."""
     handle = _RUNS.pop(run_id, None)
     if handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             handle.recorder.__exit__(None, None, None)
-        except Exception:
-            pass
 
 
 def _drop_stress_tick(state: dict, config: RunConfig) -> tuple[float, float, int]:
@@ -110,9 +109,7 @@ class SetupEngineAgent(BaseAgent):
     def __init__(self, name: str = "SetupEngine") -> None:
         super().__init__(name=name)
 
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
         raw_config = state.get(SCENARIO_CONFIG)
         if raw_config is None:
@@ -148,9 +145,7 @@ class AdvanceEngineAgent(BaseAgent):
     def __init__(self, name: str = "AdvanceEngine") -> None:
         super().__init__(name=name)
 
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
         config = RunConfig.model_validate(state[SCENARIO_CONFIG])
         handle = _RUNS.get(config.run_id)
@@ -181,9 +176,7 @@ class FinalizeEngineAgent(BaseAgent):
     def __init__(self, name: str = "FinalizeEngine") -> None:
         super().__init__(name=name)
 
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
         config = RunConfig.model_validate(state[SCENARIO_CONFIG])
         handle = _RUNS.get(config.run_id)
