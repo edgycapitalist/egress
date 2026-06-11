@@ -52,6 +52,7 @@ def build_run_config(levers: dict[str, Any] | None) -> RunConfig:
     Recognised levers (all optional; anything missing keeps the flagship default):
 
     * ``position_size``   int   — shares to exit
+    * ``population_size`` int   — number of trading agents (market participants / depth)
     * ``exit_speed``      str   — one of EXIT_SPEED_PRESETS, or…
     * ``participation_rate`` float — an explicit rate, overriding the preset
     * ``crowding_mix``    dict  — {investor_type: fraction}, renormalised to sum 1
@@ -63,6 +64,9 @@ def build_run_config(levers: dict[str, Any] | None) -> RunConfig:
 
     if levers.get("position_size"):
         data["position"]["quantity"] = int(levers["position_size"])
+
+    if levers.get("population_size"):
+        data["population_size"] = max(1, int(levers["population_size"]))
 
     rate = levers.get("participation_rate")
     if rate is None:

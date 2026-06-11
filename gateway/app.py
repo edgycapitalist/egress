@@ -66,18 +66,50 @@ async def health() -> dict[str, Any]:
 async def scenario_defaults() -> dict[str, Any]:
     """Seed values for the scenario builder — the flagship as the starting point."""
     cfg = flagship_scenario()
+    sym = cfg.instrument.symbol
     return {
         "instrument": cfg.instrument.model_dump(),
         "position_size": cfg.position.quantity,
+        "population_size": cfg.population_size,
         "exit_speed": "measured",
         "exit_speed_presets": EXIT_SPEED_PRESETS,
         "crowding_mix": cfg.crowding_mix.as_dict(),
         "scenario_text": (
-            "A crowded mid-cap industrial (ACME) is hit by a surprise rating "
-            "downgrade to junk. Forced sellers hit risk limits, panic and trend "
+            f"A heavily crowded name ({sym}) is hit by a surprise liquidity and "
+            "bankruptcy scare. Forced sellers hit margin calls, panic and trend "
             "sellers pile on, and bargain-hunter and market-maker support is thin."
         ),
         "gemini_enabled": _gemini_enabled(),
+    }
+
+
+@app.get("/api/instrument")
+def instrument_reference(symbol: str, period: str = "recent") -> dict[str, Any]:
+    """Real sourced inputs for an instrument, via the Market Data MCP.
+
+    Read-only BFF passthrough: returns the instrument's reference price, ADV, free
+    float, and recent realized volatility, plus a ``source`` field that says whether
+    the numbers came from the live Alpha Vantage feed or the synthetic fallback —
+    so the UI can label them honestly. A sync def so the (possibly blocking) MCP
+    call runs in a worker thread, not the event loop.
+    """
+    import datetime as _dt
+
+    from mcp.market_data.data import get_historical_window, get_instrument_reference
+
+    ref = get_instrument_reference(symbol)
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=120)
+    hist = get_historical_window(symbol, start.isoformat(), end.isoformat())
+    return {
+        "symbol": ref["symbol"],
+        "name": ref.get("name"),
+        "reference_price": ref["reference_price"],
+        "adv": ref["adv"],
+        "free_float": ref["free_float"],
+        "realized_vol_daily": hist.get("realized_vol_daily"),
+        "bars": len(hist.get("bars", [])),
+        "source": ref.get("source", "synthetic"),
     }
 
 

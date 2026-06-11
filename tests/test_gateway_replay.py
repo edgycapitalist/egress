@@ -110,3 +110,22 @@ def test_build_run_config_applies_levers() -> None:
     assert mix["forced_seller"] == 0.5 and mix["holder"] == 0.0
     assert cfg.run_id.startswith("run-")
     assert json.loads(cfg.model_dump_json())  # serialisable for the wire
+
+
+def test_build_run_config_applies_population_size() -> None:
+    cfg = build_run_config({"population_size": 12_000})
+    assert cfg.population_size == 12_000
+
+
+def test_scenario_defaults_includes_population_size() -> None:
+    body = TestClient(app).get("/api/scenario/defaults").json()
+    assert body["population_size"] > 0
+
+
+def test_instrument_endpoint_reports_source() -> None:
+    # Offline (no AV key) the source is the synthetic fallback, honestly labelled.
+    body = TestClient(app).get("/api/instrument", params={"symbol": "CVNA"}).json()
+    assert body["symbol"] == "CVNA"
+    assert body["reference_price"] > 0 and body["adv"] > 0
+    assert body["realized_vol_daily"] >= 0
+    assert body["source"] in {"alphavantage", "synthetic"}
