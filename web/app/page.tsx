@@ -1,27 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Activity, AlertTriangle, Pause } from "lucide-react";
+import { Activity, AlertTriangle, Info, Pause } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScenarioBuilder, type BuilderState } from "@/components/scenario-builder";
 import { PriceChart } from "@/components/price-chart";
-import { CascadeFlow } from "@/components/cascade-flow";
-import { OrderBook } from "@/components/order-book";
+import { LiveInteractions } from "@/components/live-interactions";
+import { SourcedInputs } from "@/components/sourced-inputs";
 import { FillProgress } from "@/components/fill-progress";
 import { MetricsPanel } from "@/components/metrics-panel";
 import { AnalystPanel } from "@/components/analyst-panel";
 import { useRun } from "@/lib/useRun";
-import type { Levers, RunSource } from "@/lib/types";
+import type { Levers, Metrics, RunSource, SourcedInput } from "@/lib/types";
+import { fmtPct } from "@/lib/utils";
 
 const HTTP_BASE = process.env.NEXT_PUBLIC_GATEWAY_HTTP ?? "http://127.0.0.1:8000";
 
 const DEFAULT_LEVERS: Levers = {
   scenario_text:
-    "A crowded mid-cap industrial (ACME) is hit by a surprise rating downgrade to junk. " +
-    "Forced sellers hit risk limits, panic and trend sellers pile on, and bargain-hunter " +
-    "and market-maker support is thin.",
+    "A heavily crowded name is hit by a surprise liquidity and bankruptcy scare. " +
+    "Forced sellers hit margin calls, panic and trend sellers pile on, and " +
+    "bargain-hunter and market-maker support is thin.",
   position_size: 250_000,
+  population_size: 5_000,
   exit_speed: "measured",
   crowding_mix: {
     forced_seller: 18,
@@ -47,6 +49,8 @@ export default function Page() {
     levers: DEFAULT_LEVERS,
   });
   const [geminiEnabled, setGeminiEnabled] = useState(false);
+  const [sourced, setSourced] = useState<SourcedInput | null>(null);
+  const [sourcedLoading, setSourcedLoading] = useState(false);
 
   // Hydrate defaults + capability from the gateway, if reachable. Falls back silently.
   useEffect(() => {
@@ -61,6 +65,7 @@ export default function Page() {
             ...b.levers,
             scenario_text: d.scenario_text ?? b.levers.scenario_text,
             position_size: d.position_size ?? b.levers.position_size,
+            population_size: d.population_size ?? b.levers.population_size,
             crowding_mix: scaleMix(d.crowding_mix) ?? b.levers.crowding_mix,
           },
         }));
@@ -68,12 +73,23 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
+  // Fetch the real sourced inputs for whatever instrument the run resolved to.
+  const symbol = state.config?.instrument.symbol;
+  useEffect(() => {
+    if (!symbol) {
+      setSourced(null);
+      return;
+    }
+    setSourcedLoading(true);
+    fetch(`${HTTP_BASE}/api/instrument?symbol=${encodeURIComponent(symbol)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSourced(d))
+      .catch(() => setSourced(null))
+      .finally(() => setSourcedLoading(false));
+  }, [symbol]);
+
   const run = () =>
-    start({
-      mode: builder.mode,
-      gemini: builder.gemini,
-      levers: builder.levers,
-    });
+    start({ mode: builder.mode, gemini: builder.gemini, levers: builder.levers });
 
   const last = state.ticks[state.ticks.length - 1];
   const haltedNow = Boolean(last?.halted);
@@ -88,14 +104,12 @@ export default function Page() {
   return (
     <div className="mx-auto flex min-h-screen max-w-[1500px] flex-col px-5 py-5 lg:px-7">
       {/* Header */}
-      <header className="mb-4 flex items-center justify-between">
+      <header className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Logo />
           <div>
             <h1 className="text-[15px] font-semibold tracking-tight text-ink">Egress</h1>
-            <p className="text-[11.5px] text-ink-faint">
-              Can you actually get out? Simulate the crisis exit before you commit.
-            </p>
+            <p className="text-[11.5px] text-ink-faint">Crisis-exit liquidity simulator</p>
           </div>
         </div>
         <div className="flex items-center gap-2.5">
@@ -107,6 +121,20 @@ export default function Page() {
           <StatusPill status={state.status} halted={haltedNow} />
         </div>
       </header>
+
+      {/* What this is — for someone arriving cold. */}
+      <div className="mb-4 rounded-[var(--radius)] border border-line bg-surface/60 px-4 py-3">
+        <p className="max-w-3xl text-[13.5px] leading-relaxed text-ink">
+          Egress simulates how an investment position would behave in a crisis — so you can see
+          whether you could <span className="text-ink">actually sell it</span> before the exit
+          closes, how far the price falls while you try, and how much of the position stays stuck.
+        </p>
+        <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
+          <Info className="h-3 w-3 shrink-0" />
+          The market mechanics are deterministic code; a few Gemini agents (via Vertex AI) set each
+          investor type&apos;s mood and explain the run.
+        </p>
+      </div>
 
       {/* Body */}
       <div className="grid flex-1 grid-cols-1 gap-3 lg:grid-cols-[358px_1fr]">
@@ -139,7 +167,7 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Price path"
-                  hint="the cascade as the crowd sells into a draining book"
+                  caption="The price the crowd's selling produces. A steep fall — and a halt marker — means the exit is closing as you try to sell."
                   right={
                     <div className="flex items-center gap-2">
                       {shockCount > 0 ? (
@@ -168,29 +196,43 @@ export default function Page() {
 
               <Card className="fadeup overflow-hidden">
                 <CardHeader
-                  title="Who is selling"
-                  hint="forced & panic sellers overwhelm thin support"
+                  title="Live interactions"
+                  caption="The market as it executes: buy-side liquidity draining and the seller types surging tick by tick. When sellers overwhelm the thin support, the book empties and trades stop."
                 />
-                <CascadeFlow ticks={state.ticks} totalTicks={state.totalTicks} />
+                <LiveInteractions ticks={state.ticks} totalTicks={state.totalTicks} />
               </Card>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Card className="fadeup overflow-hidden">
-                  <CardHeader title="Order book" hint="liquidity draining" />
-                  <OrderBook ticks={state.ticks} />
+                  <CardHeader
+                    title="Sourced inputs"
+                    caption="The real instrument behind this run — price, volume and volatility — from the live market-data feed, not fixed numbers."
+                  />
+                  <SourcedInputs data={sourced} loading={sourcedLoading} />
                 </Card>
                 <Card className="fadeup overflow-hidden">
-                  <CardHeader title="Fill progress" hint="how much of the position got out" />
+                  <CardHeader
+                    title="Fill progress"
+                    caption="How much of your position actually sold versus how much is left stuck."
+                  />
                   <FillProgress ticks={state.ticks} config={state.config} />
                 </Card>
               </div>
 
               <Card className="fadeup overflow-hidden">
-                <CardHeader title="Outcome" hint="the decision aid" />
+                <CardHeader
+                  title="Outcome"
+                  caption="The decision aid: could you get out, how far did the price move, and how much stayed stuck."
+                />
+                <Verdict metrics={state.metrics} />
                 <MetricsPanel metrics={state.metrics} />
               </Card>
 
               <Card className="fadeup overflow-hidden">
+                <CardHeader
+                  title="Explanation"
+                  caption="A plain-language account of why the exit closed (or did not), written only from the run's own numbers."
+                />
                 <AnalystPanel
                   analysis={state.analysis}
                   source={state.source}
@@ -203,12 +245,35 @@ export default function Page() {
       </div>
 
       <footer className="mt-5 flex items-center justify-between text-[11px] text-ink-faint">
-        <span>
-          Deterministic engine · ADK agents (Gemini via Vertex AI) · the model is one part of the
-          system, not the engine.
-        </span>
+        <span>Historical data via Alpha Vantage · simulated, not investment advice.</span>
         <span className="tnum">Egress AI</span>
       </footer>
+    </div>
+  );
+}
+
+function Verdict({ metrics }: { metrics: Metrics | null }) {
+  if (!metrics) return null;
+  const closed = metrics.fill_rate < 0.999;
+  return (
+    <div className="border-b border-line px-4 pb-3.5 pt-1">
+      <p className="text-[14.5px] leading-relaxed text-ink">
+        {closed ? (
+          <>
+            In this scenario you could sell only{" "}
+            <span className="tnum font-semibold text-sell">{fmtPct(metrics.fill_rate, 0)}</span> of
+            the position before the exit closed;{" "}
+            <span className="tnum font-semibold text-sell">{fmtPct(metrics.pct_stuck, 0)}</span>{" "}
+            stayed stuck.
+          </>
+        ) : (
+          <>
+            In this scenario the full position sold (
+            <span className="tnum font-semibold text-buy">{fmtPct(metrics.fill_rate, 0)}</span>);
+            none stayed stuck.
+          </>
+        )}
+      </p>
     </div>
   );
 }
@@ -223,13 +288,7 @@ function scaleMix(mix: Record<string, number> | undefined): Levers["crowding_mix
   return out;
 }
 
-function StatusPill({
-  status,
-  halted,
-}: {
-  status: string;
-  halted: boolean;
-}) {
+function StatusPill({ status, halted }: { status: string; halted: boolean }) {
   const map: Record<string, { label: string; tone: string; dot: string }> = {
     idle: { label: "Ready", tone: "text-ink-faint", dot: "bg-ink-faint" },
     connecting: { label: "Connecting", tone: "text-ink-muted", dot: "bg-accent" },
@@ -258,7 +317,8 @@ function EmptyState() {
         <p className="text-[14px] text-ink">Run the cascade</p>
         <p className="text-[12.5px] leading-relaxed text-ink-faint">
           Start with the recorded flagship replay, or switch to a live run and vary the position
-          size, exit speed, and crowding mix to find the point where the exit closes.
+          size, the number of market participants, the exit speed, and the crowding mix to find the
+          point where the exit closes.
         </p>
       </div>
     </Card>
@@ -266,19 +326,24 @@ function EmptyState() {
 }
 
 function Logo() {
+  // An exit door with an arrow leaving through it — the position trying to get out.
   return (
     <div className="relative flex h-9 w-9 items-center justify-center rounded-[9px] border border-line-strong bg-surface-2">
-      {/* A downward 'exit' glyph — the door the price falls through. */}
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
-        <path d="M12 4v11" stroke="var(--color-sell)" strokeWidth="1.8" strokeLinecap="round" />
         <path
-          d="M7 11l5 5 5-5"
-          stroke="var(--color-sell)"
-          strokeWidth="1.8"
+          d="M13 4H6v16h7"
+          stroke="var(--color-ink-faint)"
+          strokeWidth="1.7"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        <path d="M5 20h14" stroke="var(--color-ink-faint)" strokeWidth="1.8" strokeLinecap="round" />
+        <path
+          d="M11 12h9m-4-4 4 4-4 4"
+          stroke="var(--color-sell)"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </div>
   );
