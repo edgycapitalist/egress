@@ -3,7 +3,7 @@
 from engine.halt import HaltController
 from engine.metrics.metrics import _max_drawdown_pct, compute_metrics
 from engine.population.trader import ExitTrader
-from engine.schema import ExitSpeed, HaltRule, Position, RunConfig
+from engine.schema import ExitSpeed, HaltRule, RunConfig
 
 
 def test_halt_triggers_on_band_breach_and_pauses() -> None:
@@ -53,7 +53,9 @@ def test_metrics_partial_fill_leaves_stuck() -> None:
     cfg = _config()
     trader = ExitTrader(cfg.position, ExitSpeed(mode="immediate"))
     trader.record(price=95.0, size=600, tick=3)  # only 600 of 1000 sold
-    metrics = compute_metrics(cfg, trader, price_path=[100.0, 95.0, 90.0], halt_count=1, ticks_run=50)
+    metrics = compute_metrics(
+        cfg, trader, price_path=[100.0, 95.0, 90.0], halt_count=1, ticks_run=50
+    )
     assert metrics.filled_qty == 600
     assert metrics.stuck_qty == 400
     assert metrics.pct_stuck == 0.4

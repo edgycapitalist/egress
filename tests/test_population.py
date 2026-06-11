@@ -1,7 +1,6 @@
 """Population and exit-trader behaviour tests."""
 
 import numpy as np
-
 from engine.population.population import MarketView, Population
 from engine.population.trader import ExitTrader
 from engine.schema import ExitSpeed, Position, Stance

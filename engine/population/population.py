@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from engine.schema import INVESTOR_TYPES, CrowdingMix, InvestorType, Stance
+from engine.schema import INVESTOR_TYPES, InvestorType, Stance
 
 # Stable integer id per type, in canonical order.
 TYPE_ID: dict[InvestorType, int] = {t: i for i, t in enumerate(INVESTOR_TYPES)}
@@ -98,7 +98,9 @@ class Population:
         if idx.size == 0:
             return
         # Makers pull back as stress rises; spread widens with stress.
-        liquidity_factor = max(0.0, 1.0 - view.stress) * stance.aggressiveness * stance.participation
+        liquidity_factor = (
+            max(0.0, 1.0 - view.stress) * stance.aggressiveness * stance.participation
+        )
         if liquidity_factor <= 1e-3:
             return
         half_spread = view.last_price * (0.0005 + 0.01 * view.stress)

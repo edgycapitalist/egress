@@ -2,8 +2,8 @@
 
 from engine.core import Engine
 from engine.replay.recorder import Recorder, load_replay
-from engine.schema import RunConfig
 from engine.scenarios import flagship_scenario
+from engine.schema import RunConfig
 
 
 def test_flagship_runs_and_is_deterministic() -> None:

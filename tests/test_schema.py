@@ -1,7 +1,6 @@
 """Schema/contract tests — validation rules from docs/contracts.md §1."""
 
 import pytest
-
 from engine.schema import (
     INVESTOR_TYPES,
     STANCE_KEYS,

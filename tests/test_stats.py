@@ -1,7 +1,6 @@
 """Tests for the stress regime and threshold staggering."""
 
 import numpy as np
-
 from engine.stats.process import StressRegime, staggered_thresholds
 
 
