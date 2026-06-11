@@ -23,6 +23,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
@@ -30,6 +31,10 @@ from datetime import date, datetime, timedelta
 import numpy as np
 
 _log = logging.getLogger(__name__)
+
+# Free-tier Alpha Vantage allows ~1 request/second; space real calls to respect it.
+_MIN_CALL_SPACING_S = 1.1
+_LAST_REAL_TS = 0.0
 
 # --------------------------------------------------------------------------- #
 # Alpha Vantage client + cache + budget guard (gated on the API key)
@@ -72,7 +77,7 @@ def _real_call(params: dict, label: str) -> dict | None:
     Vantage's own rate-limit envelope, and never raises — so the caller always has
     a clean synthetic fallback.
     """
-    global _PROC_REAL_CALLS, _RATE_LIMITED
+    global _PROC_REAL_CALLS, _RATE_LIMITED, _LAST_REAL_TS
     if not _api_key() or _RATE_LIMITED:
         return None
     if _PROC_REAL_CALLS >= AV_MAX_CALLS_PER_RUN:
@@ -90,16 +95,23 @@ def _real_call(params: dict, label: str) -> dict | None:
         )
         return None
 
+    spacing = _MIN_CALL_SPACING_S - (time.monotonic() - _LAST_REAL_TS)
+    if spacing > 0:
+        time.sleep(spacing)  # respect the free tier's ~1 request/second
     payload = _av_get(params)
+    _LAST_REAL_TS = time.monotonic()
     if payload is None:
         _log.warning("Alpha Vantage request failed (network) for %s — synthetic", label)
         return None
-    if "Note" in payload or "Information" in payload:  # AV's own rate-limit envelope
-        _RATE_LIMITED = True
-        _log.warning(
-            "Alpha Vantage rate limit hit for %s — serving synthetic. Message: %s",
-            label, payload.get("Information") or payload.get("Note"),
-        )
+    if "Note" in payload or "Information" in payload:  # AV's own limit/restriction envelope
+        msg = str(payload.get("Information") or payload.get("Note") or "")
+        if "per day" in msg.lower() or "25 requests" in msg.lower():
+            _RATE_LIMITED = True  # daily quota exhausted — stop trying for this process
+            _log.warning("Alpha Vantage daily limit reached — synthetic for %s. Message: %s",
+                         label, msg)
+        else:  # transient (per-second burst) or a premium-only parameter — don't latch
+            _log.warning("Alpha Vantage restricted this request for %s — synthetic. Message: %s",
+                         label, msg)
         return None
     if "Error Message" in payload:
         _log.warning("Alpha Vantage error for %s: %s — synthetic", label, payload["Error Message"])
@@ -230,8 +242,10 @@ def _av_daily(symbol: str) -> dict | None:
     cached = _cache_get("av_daily", symbol)
     if cached is not None:
         return cached
+    # outputsize=full is a premium feature; the free tier serves `compact` (the last
+    # ~100 trading days). Older windows fall back to the synthesiser automatically.
     raw = _real_call(
-        {"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": "full"},
+        {"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": "compact"},
         f"TIME_SERIES_DAILY {symbol}",
     )
     series_raw = (raw or {}).get("Time Series (Daily)")

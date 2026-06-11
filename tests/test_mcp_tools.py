@@ -101,6 +101,7 @@ def _reset_av_guard():
         m._MEMO.clear()
         m._PROC_REAL_CALLS = 0
         m._RATE_LIMITED = False
+        m._LAST_REAL_TS = 0.0
     yield
 
 
@@ -218,7 +219,7 @@ def test_per_run_cap_blocks_excess_calls(monkeypatch, caplog) -> None:
     assert "per-run cap" in caplog.text
 
 
-def test_av_rate_limit_envelope_detected(monkeypatch, caplog) -> None:
+def test_av_daily_limit_envelope_latches(monkeypatch, caplog) -> None:
     limit_msg = {"Information": "Our standard API rate limit is 25 requests per day."}
     monkeypatch.setattr(nd, "_api_key", lambda: "TESTKEY")
     monkeypatch.setattr(nd, "_cache_get", lambda provider, key: None)
@@ -228,11 +229,25 @@ def test_av_rate_limit_envelope_detected(monkeypatch, caplog) -> None:
     with caplog.at_level(logging.WARNING, logger="mcp.news.data"):
         news = get_event_news("CVNA", "2022-12")
     assert news["source"] == "synthetic"
-    assert "rate limit hit" in caplog.text
-    # Once limited, the process stops trying the network entirely.
+    assert "daily limit reached" in caplog.text
+    # A per-day envelope latches: the process stops trying the network entirely.
     assert nd._RATE_LIMITED is True
     _forbid_http(nd, monkeypatch)
     assert get_event_news("CVNA", "2022-12")["source"] == "synthetic"  # no crash, no call
+
+
+def test_av_transient_restriction_does_not_latch(monkeypatch, caplog) -> None:
+    # A per-second / premium-only message must NOT latch — later calls may still work.
+    burst = {"Information": "Please consider spreading out your requests (1 request per second)."}
+    monkeypatch.setattr(nd, "_api_key", lambda: "TESTKEY")
+    monkeypatch.setattr(nd, "_cache_get", lambda provider, key: None)
+    monkeypatch.setattr(nd, "_cache_put", lambda provider, key, payload: None)
+    monkeypatch.setattr(nd, "_usage_today", lambda: 0)
+    monkeypatch.setattr(nd, "_av_get", lambda params: burst)
+    with caplog.at_level(logging.WARNING, logger="mcp.news.data"):
+        assert get_event_news("CVNA", "2022-12")["source"] == "synthetic"
+    assert "restricted this request" in caplog.text
+    assert nd._RATE_LIMITED is False  # not latched
 
 
 def test_cache_hit_makes_zero_real_calls(monkeypatch) -> None:
