@@ -16,7 +16,7 @@ from gateway.app import app
 from gateway.replay import frames_from_replay, read_records
 from gateway.run_config import build_run_config
 
-FLAGSHIP = Path("runs/flagship-42.ndjson")
+FLAGSHIP = Path("docs/replays/flagship-42.ndjson")
 
 
 def test_read_records_shapes_match_contract() -> None:

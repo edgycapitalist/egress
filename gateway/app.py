@@ -34,7 +34,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from gateway.replay import DEFAULT_BATCH, frames_from_replay
 from gateway.run_config import EXIT_SPEED_PRESETS, build_run_config, scenario_prompt
 
-FLAGSHIP_REPLAY = Path(os.getenv("EGRESS_FLAGSHIP_REPLAY", "runs/flagship-42.ndjson"))
+# The committed cached replay lives under docs/ (version-controlled; runs/ is
+# throwaway generated output). This is what the offline demo streams.
+FLAGSHIP_REPLAY = Path(os.getenv("EGRESS_FLAGSHIP_REPLAY", "docs/replays/flagship-42.ndjson"))
 
 # Demo pacing: ms of dwell between successive tick batches so the cascade animates.
 DEFAULT_PACE_MS = int(os.getenv("EGRESS_PACE_MS", "110"))
