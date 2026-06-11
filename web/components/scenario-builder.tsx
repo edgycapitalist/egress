@@ -1,0 +1,221 @@
+"use client";
+
+import { useMemo } from "react";
+import { Play, RotateCcw, Database, Radio } from "lucide-react";
+import {
+  INVESTOR_TYPES,
+  INVESTOR_SHORT,
+  investorColor,
+  type InvestorType,
+  type Levers,
+} from "@/lib/types";
+import type { RunStatus } from "@/lib/useRun";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { cn, fmtCompact, fmtPct } from "@/lib/utils";
+
+const EXIT_SPEEDS: { key: string; label: string }[] = [
+  { key: "patient", label: "Patient" },
+  { key: "measured", label: "Measured" },
+  { key: "urgent", label: "Urgent" },
+  { key: "fire_sale", label: "Fire sale" },
+];
+
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  options: { key: T; label: string; icon?: React.ReactNode }[];
+  value: T;
+  onChange: (v: T) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid gap-1 rounded-[9px] border border-line bg-surface-2/60 p-1",
+        disabled && "opacity-50",
+      )}
+      style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
+    >
+      {options.map((o) => (
+        <button
+          key={o.key}
+          disabled={disabled}
+          onClick={() => onChange(o.key)}
+          className={cn(
+            "flex items-center justify-center gap-1.5 rounded-[6px] px-2 py-1.5 text-[12px] font-medium transition-colors",
+            value === o.key ? "bg-ink text-bg" : "text-ink-muted hover:text-ink",
+          )}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export interface BuilderState {
+  mode: "cached" | "live";
+  gemini: boolean;
+  levers: Levers;
+}
+
+export function ScenarioBuilder({
+  state,
+  setState,
+  onRun,
+  onReset,
+  status,
+  geminiEnabled,
+}: {
+  state: BuilderState;
+  setState: (s: BuilderState) => void;
+  onRun: () => void;
+  onReset: () => void;
+  status: RunStatus;
+  geminiEnabled: boolean;
+}) {
+  const { mode, levers } = state;
+  const busy = status === "running" || status === "connecting";
+  const cached = mode === "cached";
+
+  const mixTotal = useMemo(
+    () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
+    [levers.crowding_mix],
+  );
+
+  const set = (patch: Partial<Levers>) => setState({ ...state, levers: { ...levers, ...patch } });
+  const setMix = (t: InvestorType, v: number) =>
+    set({ crowding_mix: { ...levers.crowding_mix, [t]: v } });
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4 pt-1">
+        {/* Mode */}
+        <div className="space-y-2">
+          <Label>Run source</Label>
+          <Segmented
+            options={[
+              { key: "cached", label: "Cached", icon: <Database className="h-3.5 w-3.5" /> },
+              { key: "live", label: "Live", icon: <Radio className="h-3.5 w-3.5" /> },
+            ]}
+            value={mode}
+            onChange={(m) => setState({ ...state, mode: m })}
+            disabled={busy}
+          />
+          {mode === "live" && geminiEnabled ? (
+            <label className="flex cursor-pointer items-center gap-2 pt-0.5 text-[12px] text-ink-muted">
+              <input
+                type="checkbox"
+                checked={state.gemini}
+                onChange={(e) => setState({ ...state, gemini: e.target.checked })}
+                className="accent-[var(--color-accent)]"
+              />
+              Use real Gemini (Vertex AI) — spends credits
+            </label>
+          ) : null}
+          <p className="text-[11px] leading-relaxed text-ink-faint">
+            {cached
+              ? "Replays the recorded flagship cascade — fully offline, identical every time."
+              : state.gemini
+                ? "Runs the agents for real: Gemini sets each archetype's stance, the engine runs the market."
+                : "Runs the deterministic pipeline now — the levers below drive a fresh simulation."}
+          </p>
+        </div>
+
+        <Divider />
+
+        {/* Plain-language scenario */}
+        <div className="space-y-2">
+          <Label>Position & stress event</Label>
+          <textarea
+            value={levers.scenario_text}
+            onChange={(e) => set({ scenario_text: e.target.value })}
+            disabled={cached || busy}
+            rows={4}
+            className={cn(
+              "w-full resize-none rounded-[8px] border border-line bg-surface-2/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none",
+              (cached || busy) && "opacity-55",
+            )}
+            placeholder="Describe the position you hold and the crisis you want to stress-test…"
+          />
+        </div>
+
+        {/* Position size */}
+        <Slider
+          label="Position size"
+          display={`${fmtCompact(levers.position_size)} sh`}
+          min={50_000}
+          max={1_000_000}
+          step={10_000}
+          value={levers.position_size}
+          onChange={(v) => set({ position_size: v })}
+          className={cached ? "pointer-events-none opacity-55" : ""}
+        />
+
+        {/* Exit speed */}
+        <div className={cn("space-y-2", cached && "pointer-events-none opacity-55")}>
+          <Label>Exit speed</Label>
+          <Segmented
+            options={EXIT_SPEEDS}
+            value={levers.exit_speed}
+            onChange={(v) => set({ exit_speed: v })}
+            disabled={busy}
+          />
+        </div>
+
+        <Divider />
+
+        {/* Crowding mix */}
+        <div className={cn("space-y-3", cached && "pointer-events-none opacity-55")}>
+          <Label hint="who else is crowded into this trade">Crowding mix</Label>
+          {INVESTOR_TYPES.map((t) => (
+            <Slider
+              key={t}
+              label={INVESTOR_SHORT[t]}
+              display={fmtPct((levers.crowding_mix[t] ?? 0) / mixTotal, 0)}
+              min={0}
+              max={40}
+              step={1}
+              value={levers.crowding_mix[t] ?? 0}
+              onChange={(v) => setMix(t, v)}
+              accent={investorColor(t)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="border-t border-line p-4">
+        <div className="flex gap-2">
+          <Button onClick={onRun} disabled={busy} className="flex-1" size="lg">
+            <Play className="h-4 w-4" strokeWidth={2.2} />
+            {busy ? "Running…" : cached ? "Replay cascade" : "Run simulation"}
+          </Button>
+          <Button onClick={onReset} variant="outline" size="lg" disabled={busy} aria-label="Reset">
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="text-[12px] font-medium uppercase tracking-[0.1em] text-ink-muted">
+        {children}
+      </span>
+      {hint ? <span className="text-[11px] text-ink-faint">· {hint}</span> : null}
+    </div>
+  );
+}
+
+function Divider() {
+  return <div className="h-px w-full bg-line" />;
+}

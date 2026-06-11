@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+/*
+  Egress design tokens — restrained and intentional, not a default template.
+  A near-black, faintly cool base; one neutral scale; colour reserved for data
+  semantics: warm for selling/stress, cool for buying/fills, amber for a halt.
+  Numbers are tabular mono throughout — this is a trading tool.
+*/
+@theme {
+  --color-bg: #0a0b0e;
+  --color-surface: #101218;
+  --color-surface-2: #15181f;
+  --color-line: #21252e;
+  --color-line-strong: #2c313c;
+
+  --color-ink: #e7e9ee;
+  --color-ink-muted: #9aa1ad;
+  --color-ink-faint: #5f6672;
+
+  /* Signal palette — semantic, used sparingly. */
+  --color-sell: #e5484d; /* falling price, forced/panic sellers */
+  --color-sell-dim: #7a2327;
+  --color-buy: #30a46c; /* fills, bargain hunters */
+  --color-buy-dim: #1c4a36;
+  --color-halt: #f5a623; /* volatility halt */
+  --color-accent: #6e8bff; /* interactive accent, restrained */
+
+  /* Investor-type categorical scale (warm = sell pressure, cool = support). */
+  --color-forced_seller: #e5484d;
+  --color-panic_seller: #f2734b;
+  --color-trend_follower: #e0a020;
+  --color-bargain_hunter: #30a46c;
+  --color-market_maker: #4aa3c7;
+  --color-holder: #6b7280;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
+
+  --radius: 10px;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  /* A faint top-down vignette so panels read as floating, not flat boxes. */
+  background-image: radial-gradient(
+    120% 80% at 50% -10%,
+    rgba(110, 139, 255, 0.06),
+    transparent 60%
+  );
+}
+
+/* Tabular figures for every number in the UI. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+/* Hairline divider used between metric rows. */
+.hairline {
+  border-color: var(--color-line);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Range input, styled to match — no default browser chrome. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--color-line-strong);
+  border-radius: 999px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  border: 2px solid var(--color-bg);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--color-accent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  border: 2px solid var(--color-bg);
+  cursor: pointer;
+}
+
+@keyframes fadeup {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fadeup {
+  animation: fadeup 0.35s ease both;
+}
+
+@keyframes pulse-halt {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.pulse-halt {
+  animation: pulse-halt 1.4s ease-in-out infinite;
+}
