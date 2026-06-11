@@ -29,9 +29,11 @@ keep both sides in sync. It is versioned; see [Versioning](#versioning).
 - **Investor types** are a closed enum, used as keys throughout:
   `forced_seller`, `panic_seller`, `trend_follower`, `bargain_hunter`,
   `market_maker`, `holder`.
-- All schemas are expressed for clarity here and are mirrored by Pydantic models
-  in `agents/common/` (the shared, importable source of truth once Phase 1/2
-  land). The JSON below is the normative shape.
+- All schemas are expressed for clarity here and are mirrored by importable
+  Pydantic models in [`engine/schema.py`](../engine/schema.py) — the engine owns
+  them because it depends on nothing but the core deps (pydantic + numpy) and
+  must stay LLM- and cloud-free. `agents/common/` re-exports them in Phase 2 so
+  both halves share one definition. The JSON below is the normative shape.
 
 ---
 
