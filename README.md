@@ -1,0 +1,87 @@
+# Egress AI
+
+**Simulate how an investment position would behave in a crisis — before the
+money is committed.**
+
+Egress models a crisis sell-off as a market of thousands of independent trading
+agents that act on their own and react to each other. Their orders meet in an
+order book that sets the prices, so the price moves emerge from the crowd's
+collective behaviour rather than being assumed. You see whether a position can
+actually be sold, how far the price moves while selling, and how much stays
+stuck — and you can vary how much is held and how fast it is sold to find the
+point where the exit closes.
+
+> Entry to the Google for Startups AI Agents Challenge (Track 1, Build).
+
+## The problem
+
+Firms routinely measure how much they could lose on a position, but not whether
+they could actually *sell* it in a crisis. Many firms unknowingly hold the same
+crowded trades; when a shock hits and they all sell at once, there are not enough
+buyers, the price collapses, and they cannot get out without heavy losses. Egress
+lets you test that moment before committing.
+
+## How it works
+
+A plain-language scenario goes in; a simulated exit comes out. Gemini agents set
+the behavioural *mood* per investor type; a deterministic engine runs the market.
+
+- **System architecture:** [`docs/egress-architecture.svg`](./docs/egress-architecture.svg)
+- **How a single run works:** [`docs/egress-run-flow.svg`](./docs/egress-run-flow.svg)
+
+The defining design choice: the language model is one part of the system, not the
+engine. The order book, price formation, the tick loop, and the metrics are
+deterministic code; most agents are cheap deterministic agents; a few Gemini
+agents supply judgement. Remove every LLM call and a full simulation still runs.
+
+## Architecture at a glance
+
+| Layer | Tech | Deploys to |
+| --- | --- | --- |
+| Frontend | Next.js + shadcn/ui | Cloud Run |
+| Gateway / BFF | FastAPI · WebSocket hub · A2A | Cloud Run |
+| ADK agents | Google ADK · Gemini via Vertex AI | Vertex AI Agent Engine |
+| Simulation engine | Deterministic, NumPy, **no LLM** | Cloud Run |
+| MCP servers | Market data · news | Cloud Run |
+| Grounding / memory | Vertex AI Search · Vertex AI Memory Bank | Vertex AI |
+| Data | Postgres + pgvector · Redis | Cloud SQL · Memorystore |
+
+See [`AGENTS.md`](./AGENTS.md) for the full build specification and
+[`docs/contracts.md`](./docs/contracts.md) for the engine ⇄ agents boundary.
+
+## Quickstart
+
+```bash
+make check-prereqs        # verify docker, python, gcloud
+make init                 # install deps + create .env from the example
+# edit .env: set GOOGLE_CLOUD_PROJECT / GOOGLE_CLOUD_LOCATION (see auth note)
+make start                # bring up Postgres + Redis locally
+make test                 # offline test suite
+```
+
+The deterministic baseline (`DETERMINISTIC_BASELINE=true`) runs the whole
+simulation with zero LLM calls, so development costs nothing.
+
+## Authentication
+
+Gemini is reached **only through Vertex AI**, using Application Default
+Credentials with `GOOGLE_GENAI_USE_VERTEXAI=true` and the project and location
+set in `.env`. An AI Studio `GOOGLE_API_KEY` is never used. Details in
+[`.env.example`](./.env.example) and [`CLAUDE.md`](./CLAUDE.md).
+
+## Status
+
+Built in phases (see `AGENTS.md` §11):
+
+- [x] **Phase 0** — Scaffold: repo structure, tooling, and the boundary contract.
+- [ ] **Phase 1** — Deterministic engine MVP (order book, population, metrics, NDJSON record).
+- [ ] **Phase 2** — ADK orchestration (scenario author, archetypes, simulate loop, analyst) + MCP servers.
+- [ ] **Phase 3** — Frontend + FastAPI gateway with WebSocket streaming.
+- [ ] **Phase 4** — Calibration critic + backtest against a real episode.
+- [ ] **Phase 4A** — Memory (scenario history, then calibration memory).
+- [ ] **Phase 5** — Deploy to Google Cloud (Agent Engine + Cloud Run + Terraform).
+- [ ] **Phase 6** — Docs, eval, demo, and submission write-up.
+
+## License
+
+[Apache 2.0](./LICENSE).
