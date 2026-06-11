@@ -82,6 +82,27 @@ def test_blank_crowding_falls_back_to_even_mix() -> None:
     assert abs(sum(cfg.crowding_mix.as_dict().values()) - 1.0) < 1e-9
 
 
-def test_invalid_draft_is_rejected() -> None:
+def test_degenerate_draft_is_clamped_not_crashed() -> None:
+    """The draft schema is permissive; build_run_config clamps to a valid RunConfig.
+
+    This is the robustness contract for live runs: a slightly-out-of-range model
+    output (here a zero quantity, blank crowding, and an over-1 shock severity) must
+    never crash — it is clamped into legal ranges and validated.
+    """
+    draft = ScenarioDraft(
+        symbol="ACME",
+        position_quantity=0,
+        ticks_per_window=99_999,  # larger than max_ticks -> clamped down
+        shocks=[{"tick": 5, "kind": "news", "severity": 1.8, "note": "over-range"}],
+    )
+    cfg, _ = build_run_config(draft, run_id="t3", seed=1, baseline_mode=False)
+    assert isinstance(cfg, RunConfig)
+    assert cfg.position.quantity >= 1
+    assert cfg.ticks_per_window <= cfg.max_ticks
+    assert all(0.0 <= s.severity <= 1.0 for s in cfg.shock_schedule)
+
+
+def test_draft_missing_symbol_is_rejected() -> None:
+    # `symbol` has no default, so a draft without it is still a hard rejection.
     with pytest.raises(ValidationError):
-        ScenarioDraft(symbol="ACME", position_quantity=0)  # quantity must be > 0
+        ScenarioDraft(position_quantity=1000)

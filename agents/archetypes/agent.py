@@ -4,7 +4,14 @@ One ``LlmAgent`` per investor type, each writing **only** its own ``*_stance`` k
 via ``output_key`` so the ``ParallelAgent`` fan-out never races on shared state
 (the documented ADK parallel-write pattern, contract §4). Each agent calls the
 News and Market Data MCP tools, reads the current market state from session state,
-and emits a validated ``Stance`` (``output_schema=Stance``) for its whole type.
+and emits a stance for its whole type.
+
+The LLM writes to a **permissive** ``StanceOut`` schema (no value bounds), and an
+after-agent callback clamps it into the contract's ``Stance`` ranges before the
+engine reads it. This is deliberate: Gemini occasionally emits a slightly
+out-of-range number (e.g. a negative threshold), and ADK validates ``output_schema``
+strictly — a strict ``Stance`` there would crash the whole run on any drift. Keeping
+the model schema permissive and clamping deterministically is the robust pattern.
 
 This is the live product path: real Gemini calls through Vertex AI. The
 deterministic baseline (``baseline.py``) is the swappable offline fallback — it
@@ -17,7 +24,9 @@ import json
 
 from engine.schema import INVESTOR_TYPES, InvestorType, Stance
 from google.adk.agents import LlmAgent, ParallelAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.readonly_context import ReadonlyContext
+from pydantic import BaseModel, Field
 
 from agents.archetypes.prompts import AGENT_NAMES, instruction_for
 from agents.common.env import fast_model
@@ -28,6 +37,57 @@ from agents.common.state import (
     TICK_WINDOW_INDEX,
     stance_key,
 )
+
+
+class StanceOut(BaseModel):
+    """Permissive output schema for the archetype LLMs (clamped to ``Stance`` after).
+
+    Mirrors the contract ``Stance`` fields but without value bounds, so a small
+    out-of-range model output never trips ADK's strict ``output_schema`` validation
+    and crashes the run. The values are clamped into the contract ranges by
+    :func:`_clamp_stance_callback` before the engine ever reads them.
+    """
+
+    aggressiveness: float = Field(default=0.5, description="0..1, how hard this type acts.")
+    sell_threshold_pct: float = Field(
+        default=0.05, description="Fractional price move that arms the action (>= 0)."
+    )
+    participation: float = Field(default=0.5, description="0..1, share that may act this window.")
+    updated_at_tick: int = Field(default=0, description="Tick at which this stance was set.")
+    rationale: str = Field(default="", description="One short sentence explaining the stance.")
+
+
+def _clip01(x: object) -> float:
+    try:
+        return max(0.0, min(1.0, float(x)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _clamp_stance_callback(investor_type: InvestorType):
+    """After-agent callback: clamp the model's StanceOut into a valid Stance."""
+    key = stance_key(investor_type)
+
+    def callback(callback_context: CallbackContext):
+        state = callback_context.state
+        raw = state.get(key)
+        if not isinstance(raw, dict):
+            return None  # nothing usable; the engine bridge falls back to baseline
+        try:
+            threshold = max(0.0, float(raw.get("sell_threshold_pct", 0.05)))
+            stance = Stance(
+                aggressiveness=_clip01(raw.get("aggressiveness", 0.5)),
+                sell_threshold_pct=threshold,
+                participation=_clip01(raw.get("participation", 0.5)),
+                updated_at_tick=int(raw.get("updated_at_tick", 0) or 0),
+                rationale=str(raw.get("rationale", "")),
+            )
+        except (TypeError, ValueError):
+            return None
+        state[key] = stance.model_dump()
+        return None
+
+    return callback
 
 
 def _context_block(ctx: ReadonlyContext) -> str:
@@ -84,8 +144,9 @@ def build_archetype_agent(investor_type: InvestorType) -> LlmAgent:
         instruction=_instruction_provider(investor_type),
         description=f"Sets the behavioural stance for {investor_type} investors.",
         tools=[*NEWS_TOOLS, *MARKET_DATA_TOOLS],
-        output_schema=Stance,
+        output_schema=StanceOut,
         output_key=stance_key(investor_type),
+        after_agent_callback=_clamp_stance_callback(investor_type),
         # Each mood-setter is a leaf; it must not hand control to a peer.
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,

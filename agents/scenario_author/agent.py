@@ -51,8 +51,8 @@ described; do not echo placeholders. Keep ticks within max_ticks."""
 def _finalize_scenario(seed_value: int):
     """Build the ``after_agent_callback`` that assembles + validates the RunConfig."""
 
-    def callback(ctx: CallbackContext):
-        state = ctx.state
+    def callback(callback_context: CallbackContext):
+        state = callback_context.state
         draft = state.get(SCENARIO_DRAFT)
         if draft is None:
             state[SCENARIO_ERROR] = "scenario author produced no draft"
@@ -68,7 +68,6 @@ def _finalize_scenario(seed_value: int):
             return None
         state[SCENARIO_CONFIG] = config.model_dump()
         state[INSTRUMENT_REFERENCE] = reference
-        state.pop(SCENARIO_ERROR, None)
         return None
 
     return callback

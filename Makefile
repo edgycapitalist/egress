@@ -3,7 +3,7 @@
 # costs nothing and needs no cloud credentials.
 
 .DEFAULT_GOAL := help
-.PHONY: help init start stop restart demo demo-agents auth-check test lint fmt build eval deploy check-prereqs
+.PHONY: help init start stop restart demo demo-agents demo-live auth-check test lint fmt build eval deploy check-prereqs
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -29,6 +29,9 @@ demo: ## Run the deterministic engine on the flagship scenario (no LLM, no cloud
 
 demo-agents: ## Run the full ADK orchestration in baseline mode (no LLM, no cloud)
 	$(PYTHON) -m agents.orchestrator
+
+demo-live: ## Run the full ADK pipeline against real Gemini via Vertex AI (spends credits)
+	$(PYTHON) -m agents.orchestrator --live
 
 auth-check: ## Confirm Gemini works through Vertex AI (needs ADC + project; one real call)
 	$(PYTHON) scripts/check_vertex_auth.py
