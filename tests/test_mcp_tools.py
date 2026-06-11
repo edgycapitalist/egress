@@ -15,11 +15,16 @@ from mcp.news.tools import NEWS_TOOLS
 
 
 def test_instrument_reference_fixture_matches_flagship() -> None:
-    ref = get_instrument_reference("ACME")
-    assert ref["symbol"] == "ACME"
-    assert ref["reference_price"] == 100.0
-    assert ref["adv"] == 5_000_000
-    assert ref["halt_tier"] == 1
+    # Offline (no key), the flagship ticker must resolve to exactly the instrument
+    # the engine simulates, so the scenario author and engine agree.
+    from engine.scenarios import flagship_scenario
+
+    inst = flagship_scenario().instrument
+    ref = get_instrument_reference(inst.symbol)
+    assert ref["symbol"] == inst.symbol
+    assert ref["reference_price"] == inst.reference_price
+    assert ref["adv"] == inst.adv
+    assert ref["halt_tier"] == inst.halt_tier
 
 
 def test_instrument_reference_is_deterministic_for_unknown_symbols() -> None:
@@ -82,8 +87,21 @@ def test_function_tools_expose_spec_signatures() -> None:
 # Real Alpha Vantage path vs. synthetic fallback — exercised offline by
 # monkeypatching the HTTP call, so no key, no network, no DB are ever needed.
 # --------------------------------------------------------------------------- #
+import logging  # noqa: E402
+
 import mcp.market_data.data as md  # noqa: E402
 import mcp.news.data as nd  # noqa: E402
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_av_guard():
+    """Reset the per-process budget-guard state so tests never leak into each other."""
+    for m in (md, nd):
+        m._MEMO.clear()
+        m._PROC_REAL_CALLS = 0
+        m._RATE_LIMITED = False
+    yield
 
 
 def test_no_key_path_is_synthetic_and_marked() -> None:
@@ -94,12 +112,14 @@ def test_no_key_path_is_synthetic_and_marked() -> None:
 
 
 def _patch_av(monkeypatch, module, response) -> None:
-    """Pretend a key is set and the HTTP call returns ``response``; bypass the DB."""
+    """Pretend a key is set and the HTTP call returns ``response``; bypass the DB and
+    the usage counter so the real mapping path runs with no network."""
     monkeypatch.setattr(module, "_api_key", lambda: "TESTKEY")
     monkeypatch.setattr(module, "_av_get", lambda params: response)
     monkeypatch.setattr(module, "_cache_get", lambda provider, key: None)
     monkeypatch.setattr(module, "_cache_put", lambda provider, key, payload: None)
-    module._MEMO.clear()
+    monkeypatch.setattr(module, "_usage_today", lambda: 0)
+    monkeypatch.setattr(module, "_record_usage", lambda: 1)
 
 
 _FAKE_DAILY = {
@@ -154,3 +174,72 @@ def test_rate_limit_falls_back_to_synthetic(monkeypatch) -> None:
     assert news["source"] == "synthetic"
     _patch_av(monkeypatch, md, None)
     assert get_instrument_reference("CVNA")["source"] == "synthetic"
+
+
+# --------------------------------------------------------------------------- #
+# The hard budget guard: per-run cap, daily limit, rate-limit envelope, logging,
+# and zero real calls on a cache hit. All offline (no network, no DB).
+# --------------------------------------------------------------------------- #
+def _forbid_http(module, monkeypatch) -> None:
+    def boom(_params):
+        raise AssertionError("a real Alpha Vantage HTTP call was attempted")
+
+    monkeypatch.setattr(module, "_av_get", boom)
+
+
+def test_real_call_logs_count(monkeypatch, caplog) -> None:
+    _patch_av(monkeypatch, nd, _FAKE_NEWS)
+    monkeypatch.setattr(nd, "_record_usage", lambda: 3)  # pretend this is the 3rd today
+    with caplog.at_level(logging.INFO, logger="mcp.news.data"):
+        get_event_news("CVNA", "2022-12")
+    assert "Alpha Vantage real call 3/25 today: NEWS_SENTIMENT CVNA" in caplog.text
+
+
+def test_daily_limit_blocks_call_and_logs(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(nd, "_api_key", lambda: "TESTKEY")
+    monkeypatch.setattr(nd, "_cache_get", lambda provider, key: None)
+    monkeypatch.setattr(nd, "_usage_today", lambda: 25)  # quota exhausted
+    _forbid_http(nd, monkeypatch)  # must not even try the network
+    with caplog.at_level(logging.WARNING, logger="mcp.news.data"):
+        news = get_event_news("CVNA", "2022-12")
+    assert news["source"] == "synthetic"  # automatic fallback
+    assert "daily limit reached" in caplog.text
+
+
+def test_per_run_cap_blocks_excess_calls(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(md, "_api_key", lambda: "TESTKEY")
+    monkeypatch.setattr(md, "_cache_get", lambda provider, key: None)
+    monkeypatch.setattr(md, "_usage_today", lambda: 0)
+    monkeypatch.setattr(md, "AV_MAX_CALLS_PER_RUN", 0)  # cap already spent
+    _forbid_http(md, monkeypatch)
+    with caplog.at_level(logging.WARNING, logger="mcp.market_data.data"):
+        ref = get_instrument_reference("CVNA")
+    assert ref["source"] == "synthetic"
+    assert "per-run cap" in caplog.text
+
+
+def test_av_rate_limit_envelope_detected(monkeypatch, caplog) -> None:
+    limit_msg = {"Information": "Our standard API rate limit is 25 requests per day."}
+    monkeypatch.setattr(nd, "_api_key", lambda: "TESTKEY")
+    monkeypatch.setattr(nd, "_cache_get", lambda provider, key: None)
+    monkeypatch.setattr(nd, "_cache_put", lambda provider, key, payload: None)
+    monkeypatch.setattr(nd, "_usage_today", lambda: 0)
+    monkeypatch.setattr(nd, "_av_get", lambda params: limit_msg)
+    with caplog.at_level(logging.WARNING, logger="mcp.news.data"):
+        news = get_event_news("CVNA", "2022-12")
+    assert news["source"] == "synthetic"
+    assert "rate limit hit" in caplog.text
+    # Once limited, the process stops trying the network entirely.
+    assert nd._RATE_LIMITED is True
+    _forbid_http(nd, monkeypatch)
+    assert get_event_news("CVNA", "2022-12")["source"] == "synthetic"  # no crash, no call
+
+
+def test_cache_hit_makes_zero_real_calls(monkeypatch) -> None:
+    cached = {"symbol": "CVNA", "period": "2022-12", "headlines": [], "overall_sentiment": -0.4,
+              "sentiment_label": "negative", "headline_count": 0, "source": "alphavantage"}
+    monkeypatch.setattr(nd, "_api_key", lambda: "TESTKEY")
+    monkeypatch.setattr(nd, "_cache_get", lambda provider, key: cached)
+    _forbid_http(nd, monkeypatch)  # a cache hit must never touch the network
+    out = get_event_news("CVNA", "2022-12")
+    assert out == cached

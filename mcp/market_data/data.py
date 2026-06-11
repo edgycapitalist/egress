@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import urllib.parse
 import urllib.request
@@ -28,11 +29,22 @@ from datetime import date, datetime, timedelta
 
 import numpy as np
 
+_log = logging.getLogger(__name__)
+
 # --------------------------------------------------------------------------- #
-# Alpha Vantage client + cache (gated on the API key; never required offline)
+# Alpha Vantage client + cache + budget guard (gated on the API key)
 # --------------------------------------------------------------------------- #
 _AV_BASE = "https://www.alphavantage.co/query"
 _MEMO: dict[str, dict] = {}  # process-lifetime cache: one real call per key per run
+
+# Hard budget guard. The free tier is ~25 calls/day; a cold run should make only a
+# few real calls (one daily-series + one news per symbol+period) and every repeat
+# run serves entirely from the Postgres cache. These bound the damage if the cache
+# is cold or the DB is down. Both are overridable via the environment.
+AV_DAILY_LIMIT = int(os.environ.get("ALPHAVANTAGE_DAILY_LIMIT", "25"))
+AV_MAX_CALLS_PER_RUN = int(os.environ.get("ALPHAVANTAGE_MAX_CALLS_PER_RUN", "6"))
+_PROC_REAL_CALLS = 0  # real calls made by this process (per-run cap + no-DB proxy)
+_RATE_LIMITED = False  # set once AV signals its limit, to stop hammering it
 
 
 def _api_key() -> str | None:
@@ -40,35 +52,124 @@ def _api_key() -> str | None:
 
 
 def _av_get(params: dict) -> dict | None:
-    """One Alpha Vantage call. Returns parsed JSON, or ``None`` on any failure.
-
-    Alpha Vantage signals a rate-limit or error with an HTTP 200 plus a ``Note`` /
-    ``Information`` / ``Error Message`` envelope; we treat all of those as a miss so
-    the caller falls back to the synthesiser.
-    """
-    key = _api_key()
-    if not key:
-        return None
-    url = _AV_BASE + "?" + urllib.parse.urlencode({**params, "apikey": key})
+    """One raw Alpha Vantage HTTP call. Returns parsed JSON, or ``None`` on a
+    network/parse error. Rate-limit/error *envelopes* are surfaced (not filtered)
+    so :func:`_real_call` can detect and log them."""
+    url = _AV_BASE + "?" + urllib.parse.urlencode({**params, "apikey": _api_key()})
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:  # noqa: S310 (https only)
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
-    if not isinstance(payload, dict) or any(
-        k in payload for k in ("Note", "Information", "Error Message")
-    ):
+    return payload if isinstance(payload, dict) else None
+
+
+def _real_call(params: dict, label: str) -> dict | None:
+    """Make a *budgeted, logged* real Alpha Vantage call, or return ``None``.
+
+    Enforces the per-run cap and the daily limit (Postgres-backed when available),
+    logs each successful call as ``N/limit`` with the symbol, detects Alpha
+    Vantage's own rate-limit envelope, and never raises — so the caller always has
+    a clean synthetic fallback.
+    """
+    global _PROC_REAL_CALLS, _RATE_LIMITED
+    if not _api_key() or _RATE_LIMITED:
         return None
+    if _PROC_REAL_CALLS >= AV_MAX_CALLS_PER_RUN:
+        _log.warning(
+            "Alpha Vantage per-run cap (%d) reached — serving synthetic for %s",
+            AV_MAX_CALLS_PER_RUN, label,
+        )
+        return None
+    used = _usage_today()
+    if used >= AV_DAILY_LIMIT:
+        _RATE_LIMITED = True
+        _log.warning(
+            "Alpha Vantage daily limit reached (%d/%d used) — serving synthetic for %s",
+            used, AV_DAILY_LIMIT, label,
+        )
+        return None
+
+    payload = _av_get(params)
+    if payload is None:
+        _log.warning("Alpha Vantage request failed (network) for %s — synthetic", label)
+        return None
+    if "Note" in payload or "Information" in payload:  # AV's own rate-limit envelope
+        _RATE_LIMITED = True
+        _log.warning(
+            "Alpha Vantage rate limit hit for %s — serving synthetic. Message: %s",
+            label, payload.get("Information") or payload.get("Note"),
+        )
+        return None
+    if "Error Message" in payload:
+        _log.warning("Alpha Vantage error for %s: %s — synthetic", label, payload["Error Message"])
+        return None
+
+    _PROC_REAL_CALLS += 1
+    count = _record_usage()
+    _log.info("Alpha Vantage real call %d/%d today: %s", count, AV_DAILY_LIMIT, label)
     return payload
 
 
-def _ensure_cache_table(conn) -> None:
+def _ensure_tables(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS mcp_cache ("
         "provider text NOT NULL, cache_key text NOT NULL, "
         "payload jsonb NOT NULL, fetched_at timestamptz NOT NULL DEFAULT now(), "
         "PRIMARY KEY (provider, cache_key))"
     )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS mcp_api_usage ("
+        "api text NOT NULL, usage_date date NOT NULL DEFAULT CURRENT_DATE, "
+        "calls integer NOT NULL DEFAULT 0, PRIMARY KEY (api, usage_date))"
+    )
+
+
+def _usage_today() -> int:
+    """Real Alpha Vantage calls used today — from Postgres if reachable (shared across
+    both MCPs and processes), else this process's own count as a best-effort proxy."""
+    dsn = os.environ.get("DATABASE_URL")
+    if dsn:
+        try:
+            import psycopg
+
+            with psycopg.connect(dsn, connect_timeout=3) as conn:
+                _ensure_tables(conn)
+                row = conn.execute(
+                    "SELECT calls FROM mcp_api_usage WHERE api = 'alphavantage' "
+                    "AND usage_date = CURRENT_DATE"
+                ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            pass
+    return _PROC_REAL_CALLS
+
+
+def _record_usage() -> int:
+    """Atomically increment today's Alpha Vantage usage; return the new daily total."""
+    dsn = os.environ.get("DATABASE_URL")
+    if dsn:
+        try:
+            import psycopg
+
+            with psycopg.connect(dsn, connect_timeout=3) as conn:
+                _ensure_tables(conn)
+                row = conn.execute(
+                    "INSERT INTO mcp_api_usage (api, usage_date, calls) "
+                    "VALUES ('alphavantage', CURRENT_DATE, 1) "
+                    "ON CONFLICT (api, usage_date) DO UPDATE "
+                    "SET calls = mcp_api_usage.calls + 1 RETURNING calls"
+                ).fetchone()
+                conn.commit()
+            if row:
+                return int(row[0])
+        except Exception:
+            pass
+    return _PROC_REAL_CALLS
+
+
+def _ensure_cache_table(conn) -> None:
+    _ensure_tables(conn)
 
 
 def _cache_get(provider: str, key: str) -> dict | None:
@@ -129,7 +230,10 @@ def _av_daily(symbol: str) -> dict | None:
     cached = _cache_get("av_daily", symbol)
     if cached is not None:
         return cached
-    raw = _av_get({"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": "full"})
+    raw = _real_call(
+        {"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": "full"},
+        f"TIME_SERIES_DAILY {symbol}",
+    )
     series_raw = (raw or {}).get("Time Series (Daily)")
     if not series_raw:
         return None
