@@ -3,7 +3,7 @@
 # costs nothing and needs no cloud credentials.
 
 .DEFAULT_GOAL := help
-.PHONY: help init start stop restart demo demo-agents demo-live auth-check test lint fmt build eval deploy check-prereqs
+.PHONY: help init start stop restart demo demo-agents demo-live auth-check gateway web web-install web-build test lint fmt build eval deploy check-prereqs
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -35,6 +35,18 @@ demo-live: ## Run the full ADK pipeline against real Gemini via Vertex AI (spend
 
 auth-check: ## Confirm Gemini works through Vertex AI (needs ADC + project; one real call)
 	$(PYTHON) scripts/check_vertex_auth.py
+
+gateway: ## Run the FastAPI gateway (WebSocket hub at /ws/run) on :8000
+	$(PYTHON) -m gateway
+
+web-install: ## Install the frontend's npm dependencies
+	cd web && npm install
+
+web: ## Run the Next.js frontend dev server on :3000 (needs the gateway running)
+	cd web && npm run dev
+
+web-build: ## Production build of the frontend
+	cd web && npm run build
 
 test: ## Run the offline test suite (no network, no credentials)
 	$(PYTHON) -m pytest
