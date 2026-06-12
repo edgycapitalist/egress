@@ -1,0 +1,16 @@
+{
+  "id": "cvna_2022",
+  "symbol": "CVNA",
+  "title": "Carvana (CVNA) crowded unwind, late 2022",
+  "window": "2022-11-01 to 2022-12-09",
+  "source": "Representative reconstruction of public daily closing prices for the episode window. Captures the real magnitude (~75% peak-to-trough decline) and shape (accelerating, disorderly, with the violent Dec 6-7 cliff on creditor-cooperation/bankruptcy-fear news). The live path can refresh exact closes via the Market Data MCP (Alpha Vantage TIME_SERIES_DAILY); this committed fixture is the offline behavioural-fidelity reference.",
+  "note": "Carvana was simultaneously a crowded long and a crowded short. When solvency fears hit, holders rushed the exit into evaporating bid-side support. This is the empirical anchor the calibration critic checks the simulated crowd against: the real crowd's behaviour was violent and disorderly, not orderly.",
+  "closes": [
+    15.42, 14.05, 13.10, 13.62, 14.40,
+    13.71, 12.05, 13.30, 13.58, 12.74,
+    13.02, 12.10, 11.18, 11.45, 10.62,
+    9.88, 9.41, 8.76, 8.13, 7.95,
+    7.34, 6.92, 6.85, 7.18, 6.81,
+    6.74, 4.51, 3.83, 4.09
+  ]
+}
