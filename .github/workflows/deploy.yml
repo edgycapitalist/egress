@@ -1,0 +1,63 @@
+name: deploy
+
+# Continuous deployment: on every push to main, build both images and roll them
+# out to Cloud Run. Auth is via Workload Identity Federation — no service-account
+# key or secret is stored in the repo or in GitHub. The deploys use --image only,
+# so the services keep their existing env vars (the Alpha Vantage key, the Vertex
+# settings) and min-instances; nothing sensitive lives here.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+env:
+  PROJECT: modern-girder-499022-d4
+  REGION: us-central1
+  REPO_PATH: us-central1-docker.pkg.dev/modern-girder-499022-d4/egress
+  GATEWAY_URL: https://egress-gateway-cf7gk4edya-uc.a.run.app
+  GATEWAY_WS: wss://egress-gateway-cf7gk4edya-uc.a.run.app/ws/run
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: modern-girder-499022-d4
+          workload_identity_provider: projects/978090004115/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-deployer@modern-girder-499022-d4.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build gateway image
+        run: |
+          gcloud builds submit --config cloudbuild.gateway.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/gateway:${{ github.sha }} .
+
+      - name: Build frontend image
+        run: |
+          gcloud builds submit web --config web/cloudbuild.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/frontend:${{ github.sha }},_WS=$GATEWAY_WS,_HTTP=$GATEWAY_URL
+
+      - name: Deploy gateway (keeps existing env / min-instances)
+        run: |
+          gcloud run deploy egress-gateway \
+            --image $REPO_PATH/gateway:${{ github.sha }} --region $REGION --quiet
+
+      - name: Deploy frontend (keeps existing env / min-instances)
+        run: |
+          gcloud run deploy egress-frontend \
+            --image $REPO_PATH/frontend:${{ github.sha }} --region $REGION --quiet
+
+      - name: Report URLs
+        run: |
+          echo "gateway:  $(gcloud run services describe egress-gateway  --region $REGION --format='value(status.url)')"
+          echo "frontend: $(gcloud run services describe egress-frontend --region $REGION --format='value(status.url)')"

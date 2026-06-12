@@ -26,3 +26,25 @@ jobs:
         # The suite mocks google.auth in conftest.py, so no credentials or
         # network are needed.
         run: python -m pytest
+
+  web:
+    # Catch a broken frontend before it can be merged/deployed.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
