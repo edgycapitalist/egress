@@ -67,7 +67,7 @@ make deploy          # Phase 5
 
 ## Build phases
 
-Follow the order in `AGENTS.md` §11 strictly. **Phases 0, 1, and 2 are done.**
+Follow the order in `AGENTS.md` §11 strictly. **Phases 0–4 are done.**
 
 - **Phase 1** — the deterministic engine runs a cascade end to end (`make demo` /
   `python -m engine`), writes a recorded NDJSON stream, and prints metrics, with no
@@ -83,8 +83,19 @@ Follow the order in `AGENTS.md` §11 strictly. **Phases 0, 1, and 2 are done.**
   stances refresh once per window. Confirm Vertex auth/quota with
   `make auth-check` once ADC + a project are set.
 
-**Phase 3 is next**: the Next.js frontend and the FastAPI gateway (WebSocket
-streaming of tick telemetry, A2A routing to the orchestrator).
+- **Phase 3** — the Next.js frontend and the FastAPI gateway (WebSocket streaming
+  of tick telemetry), deployed to Cloud Run with CI/CD.
+- **Phase 4** — the calibration critic (`agents/critic/`) judges a run against the
+  curated real CVNA 2022 episode on three timescale-fair axes (drawdown, stranded
+  liquidity, disorder/halt) and emits bounded per-type stance nudges; a
+  generator-critic loop (`eval/backtest.py`, `make eval`) re-runs an over-rational
+  crowd until it reproduces the episode's signature. Deterministic stand-in for
+  offline/CI (`BaselineCriticAgent`), live Gemini judge for the narrative
+  (`--critic`). It owns the `calibration_report` / `calibration_adjustments`
+  state keys; the archetypes read the adjustments at run start.
+
+**Phase 4A (cross-run memory) is next**, then RAG grounding (Vertex AI Search)
+and A2A transport.
 
 ## Conventions
 

@@ -40,7 +40,18 @@ Because the mechanics are deterministic code, removing every Gemini call still p
 
 ![Egress run flow](./docs/egress-run-flow.svg)
 
-The diagrams show the full target architecture. Boxes marked *planned* (the calibration critic, cross-run memory, RAG grounding, A2A transport, and the cloud deployment) are specified but not yet built. What ships today is the deterministic engine, the ADK orchestration through the analyst, the two MCP servers, and the gateway plus frontend. The gateway currently calls the orchestrator in-process rather than over A2A.
+The diagrams show the full target architecture. Boxes marked *planned* (cross-run memory, RAG grounding, and A2A transport) are specified but not yet built. What ships today is the deterministic engine, the ADK orchestration through the analyst and the **calibration critic**, the two MCP servers, the gateway plus frontend, and a Cloud Run deployment. The gateway currently calls the orchestrator in-process rather than over A2A.
+
+### Calibration against a real episode
+
+The system's hardest problem is behavioural fidelity: model-driven market agents tend to behave too rationally — selling too orderly, support that does not evaporate. The **calibration critic** is the quality gate for that. After a run it compares the simulated unwind to a curated real crisis episode (Carvana's late-2022 collapse, a ~75% peak-to-trough drawdown) on three timescale-fair axes — how far the price was forced, how much of the position was stranded, and whether the move was disorderly enough to halt — and judges the crowd *plausible* or *too calm*. When too calm, it emits bounded per-type stance nudges, and a generator-critic loop re-runs until the crowd reproduces the episode's behavioural signature.
+
+```bash
+make eval          # the calibration backtest: starts an over-rational crowd and
+                   # calibrates it to the real CVNA episode (offline, no LLM, no cloud)
+```
+
+The critic has a deterministic stand-in (the verdict and nudges are exact, not a model guess) and a live Gemini judge that writes the same verdict as a narrative (`python -m agents.orchestrator --critic`, add `--live` for Vertex). The backtest runs entirely on the deterministic baseline, so it is reproducible and free.
 
 ## Running it yourself
 

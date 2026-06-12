@@ -44,7 +44,7 @@ A2A note: A2A is only mandatory for Track 3. We are Track 1, so A2A is optional.
 
 ## 3. System architecture
 
-This is the **target** architecture. As shipped, Phases 0 to 3 are built: the deterministic engine, the ADK orchestration (scenario author, the six archetype mood-setters, the simulate loop, and the analyst), the two MCP servers, and the gateway plus frontend. The calibration critic, cross-run memory (Memory Bank), Vertex AI Search (RAG) grounding, A2A transport, and the Cloud deployment are later phases (§11); the gateway currently invokes the orchestrator in-process rather than over A2A.
+This is the **target** architecture. As shipped, Phases 0 to 4 are built: the deterministic engine, the ADK orchestration (scenario author, the six archetype mood-setters, the simulate loop, the analyst, and the **calibration critic** with a backtest against a real episode), the two MCP servers, the gateway plus frontend, and a Cloud Run deployment. Cross-run memory (Memory Bank), Vertex AI Search (RAG) grounding, and A2A transport are later phases (§11); the gateway currently invokes the orchestrator in-process rather than over A2A.
 
 ```mermaid
 graph TD
@@ -336,7 +336,7 @@ Phased so that there is a working, demonstrable vertical slice as early as possi
 - Phase 1 — Deterministic engine MVP. Order book, one instrument, the six agent types as deterministic agents driven by fixed stances, the metrics, and NDJSON record. No LLM. This alone produces a runnable cascade and is the backbone of the demo.
 - Phase 2 — ADK orchestration. Scenario author, the six archetype mood-setters as a ParallelAgent, the simulate LoopAgent wiring the archetypes to the engine, and the analyst. The two MCP servers. Sessions, state, runner.
 - Phase 3 — Frontend. Next.js plus shadcn. Scenario builder, the cascade and order-book visualisation, the metrics and explanation panels, the levers, and the cached-versus-live toggle. The FastAPI gateway with WebSocket streaming.
-- Phase 4 — Calibration and backtest. The critic agent and a backtest against one real historical episode. This is the credibility and most of the findings section.
+- Phase 4 — Calibration and backtest. **Done.** The critic agent (`agents/critic/`) judges a run against the curated real CVNA 2022 episode on three timescale-fair axes, and a generator-critic loop (`eval/backtest.py`, `make eval`) re-runs an over-rational crowd until it reproduces the episode's behavioural signature. Deterministic stand-in for offline/CI; live Gemini judge for the narrative. This is the credibility and most of the findings section.
 - Phase 4A — Memory. Wire the ADK MemoryService and Vertex AI Memory Bank. Write scenario history on each run and read it in the analyst; persist the critic's calibration adjustments and read them at run start. Scenario history first, calibration memory second (section 7A).
 - Phase 5 — Deploy to Google Cloud. Agents to Agent Engine, services to Cloud Run, Cloud SQL and Redis, Terraform. Record a cached replay of the flagship scenario (CVNA, the late-2022 Carvana unwind) for the demo.
 - Phase 6 — Docs, diagram, eval, demo video, and the submission write-up fields.
