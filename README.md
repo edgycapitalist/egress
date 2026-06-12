@@ -28,45 +28,66 @@ Because the mechanics are deterministic code, removing every Gemini call still p
 
 ![Egress run flow](./docs/egress-run-flow.svg)
 
-## Running it
+The diagrams show the full target architecture. Boxes marked *planned* (the calibration critic, cross-run memory, RAG grounding, A2A transport, and the cloud deployment) are specified but not yet built. What ships today is the deterministic engine, the ADK orchestration through the analyst, the two MCP servers, and the gateway plus frontend. The gateway currently calls the orchestrator in-process rather than over A2A.
 
-Prerequisites: Docker, Python 3.13, and (for the live path only) `gcloud`.
+## Running it yourself
+
+Everything in steps 1 and 2 runs fully offline with no cloud account and no API keys. Step 3 is optional and adds real data and real Gemini.
+
+### Prerequisites
+
+- **Python 3.13** and **pip**
+- **Node.js 18+** and **npm** (only for the frontend in step 2)
+- **Docker** with `docker compose` (only if you want to cache API responses or run the local data layer)
+- **gcloud** (only for the live Gemini path in step 3)
+
+### Setup
 
 ```bash
-make check-prereqs        # verify docker, python, gcloud
-make init                 # install deps and create .env from the example
-make test                 # offline test suite, no network, no credentials
+git clone https://github.com/edgycapitalist/egress.git
+cd egress
+make init     # installs the package (all extras + dev) and creates .env from .env.example
+make test     # offline test suite: no network, no credentials. Confirms the install works.
 ```
 
-### Baseline (offline, zero LLM, zero cloud)
+### 1. Offline simulation (no cloud, no keys)
 
 ```bash
-make demo                 # deterministic engine on the flagship scenario; prints metrics, writes an NDJSON replay
-make demo-agents          # the full ADK orchestration in baseline mode, end to end with no LLM calls
+make demo          # deterministic engine on the flagship CVNA scenario
+make demo-agents   # the full ADK orchestration in baseline mode, end to end with zero LLM calls
 ```
 
-`make demo` runs a crowded mid-cap through a downgrade shock and prints fill rate, slippage, stuck percentage, and halts. `make demo-agents` drives the whole ADK lifecycle (scenario setup, the simulate `LoopAgent`, finalize, and the analyst) through the real ADK `Runner`, with the archetype and analyst models swapped for deterministic stand-ins, proving the orchestration produces a cascade, metrics, a replay, and a plain-language narrative with zero Gemini calls.
+`make demo` runs the crowded CVNA position through a downgrade shock and prints the metrics (fill rate, slippage, stuck percentage, halts), then writes an NDJSON replay under `runs/`. `make demo-agents` drives the whole ADK lifecycle (setup, the simulate `LoopAgent`, finalize, and the analyst) through the real ADK `Runner` with the archetype and analyst models swapped for deterministic stand-ins, so it produces a cascade, metrics, a replay, and a plain-language narrative without a single Gemini call.
 
-### Live (Gemini via Vertex AI)
+### 2. The app locally (gateway + frontend)
+
+Run the two services in separate terminals:
+
+```bash
+# terminal 1: the gateway (FastAPI + WebSocket hub) on http://127.0.0.1:8000
+make gateway
+
+# terminal 2: the frontend (Next.js) on http://localhost:3000
+make web-install   # first time only
+make web
+```
+
+Open <http://localhost:3000>. The frontend defaults to the gateway at `ws://127.0.0.1:8000/ws/run` (override with `NEXT_PUBLIC_GATEWAY_WS`; see [`web/.env.example`](./web/.env.example)). The UI boots in **cached** mode and replays the committed flagship cascade, so it works with no cloud and no keys. The scenario levers (position size, exit speed, crowding mix) re-run against that replay.
+
+### 3. Real data and live Gemini (optional)
+
+**Real market data.** Get a free Alpha Vantage key at <https://www.alphavantage.co/support/#api-key> and set `ALPHAVANTAGE_API_KEY` in `.env`. The MCP servers then pull real CVNA prices and news, caching responses in Postgres (`make start` brings up Postgres and Redis locally). Without a key, the servers use the deterministic synthetic fallback automatically.
+
+**Live Gemini through Vertex AI.**
 
 ```bash
 gcloud auth application-default login
-# set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION in .env (GOOGLE_GENAI_USE_VERTEXAI=true)
-make auth-check           # one real Gemini call to confirm auth and quota
-make demo-live            # the full ADK pipeline against real Gemini via Vertex AI
+# in .env: set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION (GOOGLE_GENAI_USE_VERTEXAI=true is the default)
+make auth-check    # makes one real Gemini call to confirm auth and quota
+make demo-live     # the full ADK pipeline against real Gemini via Vertex AI
 ```
 
-Gemini is reached only through Vertex AI, using Application Default Credentials. An AI Studio `GOOGLE_API_KEY` is never used. The full configuration lives in [`.env.example`](./.env.example).
-
-### The app (gateway and frontend)
-
-```bash
-make gateway              # FastAPI WebSocket hub on :8000
-make web-install          # one-time: install the frontend's npm deps
-make web                  # Next.js dev server on :3000, open http://localhost:3000
-```
-
-The UI replays the flagship cascade with no live call, so the demo always runs offline. To run a fresh simulation through the ADK orchestrator against real Gemini, set `EGRESS_LIVE_GEMINI=true` for the gateway (otherwise the live toggle uses the deterministic stances).
+To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_LIVE_GEMINI=true make gateway`; otherwise a live run in the UI uses the deterministic stances. Gemini is reached only through Vertex AI with Application Default Credentials; an AI Studio `GOOGLE_API_KEY` is never used. The full configuration is documented in [`.env.example`](./.env.example).
 
 ## Tech stack
 
@@ -77,7 +98,7 @@ The UI replays the flagship cascade with no live call, so the demo always runs o
 | External data | Two MCP servers (market data, news) over the Model Context Protocol. |
 | Gateway / BFF | FastAPI, WebSocket streaming of tick telemetry. |
 | Frontend | Next.js 15, React 19, shadcn/ui, Tailwind CSS. |
-| Local data layer | Postgres and Redis via docker-compose; Postgres also backs an optional cache for fetched market data. |
+| Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is provisioned for a planned tick-state layer and is not yet used in code. |
 
 See [`AGENTS.md`](./AGENTS.md) for the full build specification and [`docs/contracts.md`](./docs/contracts.md) for the engine and agents boundary.
 

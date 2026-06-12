@@ -44,6 +44,8 @@ A2A note: A2A is only mandatory for Track 3. We are Track 1, so A2A is optional.
 
 ## 3. System architecture
 
+This is the **target** architecture. As shipped, Phases 0 to 3 are built: the deterministic engine, the ADK orchestration (scenario author, the six archetype mood-setters, the simulate loop, and the analyst), the two MCP servers, and the gateway plus frontend. The calibration critic, cross-run memory (Memory Bank), Vertex AI Search (RAG) grounding, A2A transport, and the Cloud deployment are later phases (§11); the gateway currently invokes the orchestrator in-process rather than over A2A.
+
 ```mermaid
 graph TD
     User["User"]
