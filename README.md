@@ -4,6 +4,12 @@ Egress simulates how an investment position would behave in a crisis sell-off, b
 
 > Entry to the Google for Startups AI Agents Challenge (Track 1, Build).
 
+## Demo video
+
+[![Watch the Egress demo](https://img.youtube.com/vi/8xlknY_OmvI/maxresdefault.jpg)](https://youtu.be/8xlknY_OmvI)
+
+Watch the walkthrough: <https://youtu.be/8xlknY_OmvI>
+
 ## Problem and solution
 
 Firms routinely measure how much they could lose on a position, but not whether they could actually *sell* it in a crisis. Many firms unknowingly hold the same crowded trades, and when a shock hits and they all sell at once there are not enough buyers, the price collapses, and they cannot get out without heavy losses. There is no easy way today to test how a position behaves in that moment before committing.
