@@ -37,8 +37,8 @@
   <text x="590" y="288" font-size="14" font-weight="600" text-anchor="middle" fill="#202124">Gateway / BFF</text>
   <text x="590" y="307" font-size="12" text-anchor="middle" fill="#5f6368">FastAPI &#183; WebSocket hub &#183; Cloud Run</text>
 
-  <!-- Agents container -->
-  <rect x="60" y="356" width="700" height="196" rx="14" fill="#F8FBFF" stroke="#4285F4" stroke-dasharray="6 4"/>
+  <!-- Agents container (shipped; solid stroke) -->
+  <rect x="60" y="356" width="700" height="196" rx="14" fill="#F8FBFF" stroke="#4285F4" stroke-width="1.6"/>
   <text x="80" y="380" font-size="13" font-weight="700" fill="#1a73e8">ADK agents &#8212; Gemini via Vertex AI &#183; runs on the ADK Runner (Agent Engine is the deploy target)</text>
 
   <!-- Orchestrator -->
@@ -69,8 +69,8 @@
   <text x="617" y="476" font-size="13" font-weight="600" text-anchor="middle" fill="#5f6368">Calibration Critic &#183; planned</text>
   <text x="617" y="492" font-size="11" text-anchor="middle" fill="#80868b">LLM-as-judge vs real episode</text>
 
-  <!-- Simulation engine container -->
-  <rect x="60" y="584" width="700" height="150" rx="14" fill="#F4FBF6" stroke="#34A853" stroke-dasharray="6 4"/>
+  <!-- Simulation engine container (shipped; solid stroke) -->
+  <rect x="60" y="584" width="700" height="150" rx="14" fill="#F4FBF6" stroke="#34A853" stroke-width="1.6"/>
   <text x="80" y="608" font-size="13" font-weight="700" fill="#188038">Simulation Engine &#8212; deterministic, no LLM &#183; Cloud Run</text>
 
   <rect x="84" y="626" width="120" height="86" rx="9" fill="#E6F4EA" stroke="#34A853"/>
