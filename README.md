@@ -4,6 +4,12 @@ Egress simulates how an investment position would behave in a crisis sell-off, b
 
 > Entry to the Google for Startups AI Agents Challenge (Track 1, Build).
 
+## Live demo
+
+**<https://egress-frontend-978090004115.us-central1.run.app>**
+
+Cached mode plays the real CVNA cascade instantly; the "Use real Gemini (Vertex AI)" option runs the live multi-agent pipeline (~60–90s).
+
 ## Demo video
 
 [![Watch the Egress demo](https://img.youtube.com/vi/8xlknY_OmvI/maxresdefault.jpg)](https://youtu.be/8xlknY_OmvI)
