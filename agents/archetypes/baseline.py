@@ -15,6 +15,7 @@ proxy of the price drawdown, since stress is not part of the public market state
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncGenerator
 
 from engine.baseline import baseline_stances
@@ -23,7 +24,14 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
-from agents.common.state import MARKET_STATE, SCENARIO_CONFIG, stance_key
+from agents.common.state import (
+    CALIBRATION_ADJUSTMENTS,
+    MARKET_STATE,
+    SCENARIO_CONFIG,
+    stance_key,
+)
+from agents.critic.adjust import apply_adjustments
+from agents.critic.schema import CalibrationAdjustments
 
 
 def _stress_proxy(drop: float, halted: bool) -> float:
@@ -54,6 +62,16 @@ class BaselineStancesAgent(BaseAgent):
         stress = _stress_proxy(drop, halted)
 
         stances = baseline_stances(drop, stress, tick)
+
+        # Calibration nudges (if the critic wrote any) bias the crowd before the
+        # engine reads it — the read side of the contract's calibration_adjustments
+        # key. Identity/empty leaves the heuristic untouched.
+        raw_adj = state.get(CALIBRATION_ADJUSTMENTS)
+        if raw_adj:
+            # A malformed adjustment set never distorts or crashes the run.
+            with contextlib.suppress(Exception):
+                stances = apply_adjustments(stances, CalibrationAdjustments.model_validate(raw_adj))
+
         delta = {stance_key(t): stances[t].model_dump() for t in INVESTOR_TYPES}
         for key, value in delta.items():
             state[key] = value

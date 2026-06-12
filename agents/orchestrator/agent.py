@@ -31,6 +31,8 @@ from agents.analyst.agent import build_analyst
 from agents.analyst.baseline import BaselineAnalystAgent
 from agents.archetypes.agent import build_archetypes_parallel
 from agents.archetypes.baseline import BaselineStancesAgent
+from agents.critic import build_critic
+from agents.critic.baseline import BaselineCriticAgent
 from agents.orchestrator.engine_bridge import (
     AdvanceEngineAgent,
     FinalizeEngineAgent,
@@ -53,8 +55,15 @@ def build_simulate_loop(*, baseline: bool) -> LoopAgent:
     )
 
 
-def build_orchestrator(*, baseline: bool) -> SequentialAgent:
-    """Assemble the run-lifecycle ``SequentialAgent`` for the chosen mode."""
+def build_orchestrator(*, baseline: bool, with_critic: bool = False) -> SequentialAgent:
+    """Assemble the run-lifecycle ``SequentialAgent`` for the chosen mode.
+
+    ``with_critic`` appends the calibration critic as the final step (the diagram's
+    ORCH → CRITIC edge). It is off by default so the gateway's interactive runs stay
+    lean; the backtest, ``make eval``, and the orchestrator CLI's ``--critic`` flag
+    turn it on. One forward pass produces a ``calibration_report``; the iterate-and-
+    re-run generator-critic loop lives in ``eval/backtest.py``.
+    """
     sub_agents: list = []
     if not baseline:
         # Live: the LLM scenario author produces scenario_config first.
@@ -63,4 +72,6 @@ def build_orchestrator(*, baseline: bool) -> SequentialAgent:
     sub_agents.append(build_simulate_loop(baseline=baseline))
     sub_agents.append(FinalizeEngineAgent())
     sub_agents.append(BaselineAnalystAgent() if baseline else build_analyst())
+    if with_critic:
+        sub_agents.append(BaselineCriticAgent() if baseline else build_critic())
     return SequentialAgent(name="EgressRun", sub_agents=sub_agents)

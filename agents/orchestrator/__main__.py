@@ -59,6 +59,11 @@ def _print_report(title: str, analyst_label: str, result: dict) -> int:
     print(bar)
     print(f"  Analyst ({analyst_label}):")
     print(f"  {result['analysis']}")
+    report = result.get("calibration_report")
+    if report:
+        print(bar)
+        print(f"  Calibration critic ({analyst_label}) — verdict: {report['verdict']}")
+        print(f"  {report.get('narrative', '')}")
     print(f"{bar}\n")
     return 0
 
@@ -79,16 +84,21 @@ def main(argv: list[str] | None = None) -> int:
         default=FLAGSHIP_PROMPT,
         help="plain-language scenario for the live scenario author",
     )
+    parser.add_argument(
+        "--critic",
+        action="store_true",
+        help="append the calibration critic (judge the run vs the real CVNA episode)",
+    )
     args = parser.parse_args(argv)
 
     if args.live:
         print("Running the LIVE pipeline (real Gemini via Vertex AI) — this spends credits.")
         print(f"Scenario: {args.scenario}")
-        result = asyncio.run(run_live_simulation(args.scenario))
+        result = asyncio.run(run_live_simulation(args.scenario, with_critic=args.critic))
         return _print_report("EGRESS · ADK orchestration (LIVE Gemini)", "Gemini", result)
 
     config = flagship_scenario(seed=args.seed)
-    result = asyncio.run(run_baseline_simulation(config))
+    result = asyncio.run(run_baseline_simulation(config, with_critic=args.critic))
     return _print_report("EGRESS · ADK orchestration (baseline)", "deterministic baseline", result)
 
 

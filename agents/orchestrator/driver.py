@@ -25,6 +25,8 @@ from google.genai import types
 from agents.common.env import assert_vertex_config, seed
 from agents.common.state import (
     ANALYSIS,
+    CALIBRATION_ADJUSTMENTS,
+    CALIBRATION_REPORT,
     MARKET_STATE,
     REPLAY_REF,
     RUN_METRICS,
@@ -44,6 +46,7 @@ def _collect(state: dict) -> dict[str, Any]:
         "market_state": state.get(MARKET_STATE),
         "run_metrics": state.get(RUN_METRICS),
         "analysis": state.get(ANALYSIS),
+        "calibration_report": state.get(CALIBRATION_REPORT),
         "replay_ref": state.get(REPLAY_REF),
         "error": state.get("engine_error") or state.get("scenario_error"),
     }
@@ -73,26 +76,39 @@ async def _execute(orchestrator, initial_state: dict, message: str) -> dict[str,
             close_handle(run_id_for_cleanup)
 
 
-async def run_baseline_simulation(config: RunConfig | None = None) -> dict[str, Any]:
-    """Run the full pipeline deterministically (no LLM). Defaults to the flagship."""
+async def run_baseline_simulation(
+    config: RunConfig | None = None,
+    *,
+    with_critic: bool = False,
+    adjustments: dict | None = None,
+) -> dict[str, Any]:
+    """Run the full pipeline deterministically (no LLM). Defaults to the flagship.
+
+    ``with_critic`` appends the calibration critic; ``adjustments`` seeds the
+    ``calibration_adjustments`` the archetypes read at run start, which is how the
+    backtest's generator-critic loop re-runs a crowd it has nudged.
+    """
     if config is None:
         from engine.scenarios import flagship_scenario
 
         config = flagship_scenario(seed=seed())
     config = config.model_copy(update={"baseline_mode": True})
 
-    orchestrator = build_orchestrator(baseline=True)
-    initial_state = {SCENARIO_CONFIG: config.model_dump()}
+    orchestrator = build_orchestrator(baseline=True, with_critic=with_critic)
+    initial_state: dict[str, Any] = {SCENARIO_CONFIG: config.model_dump()}
+    if adjustments:
+        initial_state[CALIBRATION_ADJUSTMENTS] = adjustments
     return await _execute(orchestrator, initial_state, message="Run the baseline simulation.")
 
 
-async def run_live_simulation(scenario_raw: str) -> dict[str, Any]:
+async def run_live_simulation(scenario_raw: str, *, with_critic: bool = False) -> dict[str, Any]:
     """Run the product pipeline with real Gemini calls through Vertex AI.
 
     Validates the Vertex configuration first so the failure is a clear auth error,
     not a deep SDK stack trace. Build/test offline with ``run_baseline_simulation``.
+    ``with_critic`` appends the live Gemini calibration judge.
     """
     assert_vertex_config()
-    orchestrator = build_orchestrator(baseline=False)
+    orchestrator = build_orchestrator(baseline=False, with_critic=with_critic)
     initial_state = {SCENARIO_RAW: scenario_raw}
     return await _execute(orchestrator, initial_state, message=scenario_raw)
