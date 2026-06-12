@@ -63,8 +63,8 @@ build: ## Build all service container images
 	docker build --target news_mcp        -t egress-news-mcp .
 	docker build --target gateway         -t egress-gateway .
 
-eval: ## Run agent evals / backtest against a real episode (Phase 4)
-	@echo "eval target is wired in Phase 4 (see eval/)."
+eval: ## Run the calibration backtest against the real CVNA 2022 episode (offline, no LLM)
+	$(PYTHON) -m eval
 
 deploy: ## Deploy agents to Agent Engine and services to Cloud Run (Phase 5)
 	@echo "deploy target is wired in Phase 5 (see scripts/deploy.sh and infra/)."
