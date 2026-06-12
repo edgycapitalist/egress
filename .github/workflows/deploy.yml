@@ -9,6 +9,9 @@ name: deploy
 on:
   push:
     branches: [main]
+    paths-ignore: # docs / CI-only changes shouldn't rebuild + redeploy
+      - "**.md"
+      - ".github/**"
   workflow_dispatch: {}
 
 permissions:

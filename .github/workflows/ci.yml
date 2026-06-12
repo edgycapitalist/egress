@@ -17,7 +17,10 @@ jobs:
           python-version: "3.13"
 
       - name: Install
-        run: python -m pip install -e ".[dev]"
+        # Full extras: the offline suite imports the agents (ADK), gateway
+        # (FastAPI) and MCP packages — it just never makes a network/LLM call
+        # (conftest mocks google.auth).
+        run: python -m pip install -e ".[all,dev]"
 
       - name: Lint
         run: python -m ruff check .
