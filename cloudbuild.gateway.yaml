@@ -6,3 +6,7 @@ steps:
     args: ['build', '-t', '${_IMAGE}', '--target', 'gateway', '.']
 images:
   - '${_IMAGE}'
+# Stream to Cloud Logging (not a GCS bucket) so a CI service account can submit
+# builds without needing the default logs bucket.
+options:
+  logging: CLOUD_LOGGING_ONLY
