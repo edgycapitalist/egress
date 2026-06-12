@@ -52,7 +52,10 @@ COPY mcp/ ./mcp/
 COPY memory/ ./memory/
 COPY gateway/ ./gateway/
 COPY docs/replays/ ./docs/replays/
-RUN pip install ".[gateway]"
+# gateway + agents (ADK / google-genai) so the deployed service can run the live
+# Gemini pipeline as well as cached replay. Gemini is reached only via Vertex AI
+# using the Cloud Run service account's ADC (no API key).
+RUN pip install ".[gateway,agents]"
 EXPOSE 8080
 # Respect Cloud Run's injected $PORT (defaults to 8080 locally).
 CMD ["sh", "-c", "uvicorn gateway.app:app --host 0.0.0.0 --port ${PORT:-8080}"]
