@@ -172,8 +172,18 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         replay_path, source=source, batch_size=batch_size, analysis=analysis
     ):
         await ws.send_json(frame)
-        if frame["type"] == "ticks" and pace:
-            await asyncio.sleep(pace)
+        # Pace the ticks for the animation; give the trailing frames (metrics /
+        # analysis / done) a small gap too, so they are not a single burst right
+        # before the close. Cloud Run's WebSocket proxy can drop an un-flushed tail
+        # when the server sends the last frames and immediately closes.
+        if frame["type"] == "ticks":
+            if pace:
+                await asyncio.sleep(pace)
+        else:
+            await asyncio.sleep(0.06)
+    # Hold the socket open briefly so the final frames flush across the proxy
+    # before the handler returns and the connection is torn down.
+    await asyncio.sleep(0.5)
 
 
 @app.websocket("/ws/run")
@@ -182,6 +192,10 @@ async def ws_run(ws: WebSocket) -> None:
     try:
         request = await ws.receive_json()
         await _stream(ws, request)
+        # Wait for the client to close first (it does once it has the `done` frame),
+        # so we never tear the connection down before the tail is delivered.
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(ws.receive_text(), timeout=5)
     except WebSocketDisconnect:
         return
     except Exception as exc:

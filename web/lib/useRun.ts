@@ -86,12 +86,17 @@ export function useRun() {
         return;
       }
       setState((s) => reduce(s, frame));
+      // Close from our side once the run is done, so the gateway never tears the
+      // connection down before the tail is delivered.
+      if (frame.type === "done") ws.close();
     };
 
     ws.onerror = () => {
+      // A drop after the outcome arrived is just an unclean close, not a failure —
+      // the cascade and metrics are already in hand, so treat it as complete.
       setState((s) =>
-        s.status === "done"
-          ? s
+        s.status === "done" || s.metrics
+          ? { ...s, status: "done" }
           : { ...s, status: "error", error: "Lost the connection to the gateway." },
       );
     };
