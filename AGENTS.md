@@ -131,7 +131,9 @@ The agents are organised in three tiers. This is how we get thousands of agents 
 
 ### Tier A — Gemini archetype agents (few, the judgement layer)
 
-One Gemini-powered ADK `LlmAgent` per investor type. These do not run per individual agent. Each reads the scenario, the latest news for the instrument and period (over MCP), and the current market state, and outputs a structured behavioural stance for its whole type, for example an aggressiveness level and an adjusted sell threshold. The stance is written to `session.state` via `output_key`. The stance is refreshed every k ticks, not every tick, to control cost.
+One Gemini-powered ADK `LlmAgent` per investor type. These do not run per individual agent. Each reads the scenario author's brief (its rationale, the scheduled stress events, and a faithful echo of the user's own words, so the described situation and not just the ticker drives the stance), the latest news for the instrument and period (over MCP), and the current market state, and outputs a structured behavioural stance for its whole type, for example an aggressiveness level and an adjusted sell threshold. The stance is written to `session.state` via `output_key`. The stance is refreshed every k ticks, not every tick, to control cost.
+
+The model writes to a permissive stance schema with no value bounds, and an after-agent callback clamps the result into the contract's `Stance` ranges before the engine reads it. This is deliberate: ADK validates `output_schema` strictly, and Gemini occasionally emits a slightly out-of-range value (a negative threshold, say), which a strict schema would turn into a crash mid-run. Keeping the model schema permissive and clamping deterministically is what keeps a live run robust.
 
 Investor types (each is an archetype agent plus a deterministic population that follows its stance):
 
@@ -154,7 +156,7 @@ The order book, price formation, the tick loop, and the metrics. Pure code. Sect
 
 ### The orchestration agents (ADK)
 
-- Scenario Author (`LlmAgent`, coordinator role): turns the user's plain-language position and stress event into a structured, validated scenario config (instrument, position size, exit speed, crowding mix, shock schedule). Grounds on the market data MCP to resolve the instrument and its reference data. Output is validated deterministically against a schema before the run starts.
+- Scenario Author (`LlmAgent`, coordinator role): turns the user's plain-language position and stress event into a structured scenario draft (instrument, position size, exit speed, crowding mix, shock schedule). Grounds on the market data MCP to resolve the instrument and its reference data. An `after_agent_callback` then deterministically assembles and validates the full `RunConfig` before the run starts: the model chooses what to simulate, but the callback guarantees a schema-valid config and that ADV, free float, and halt tier come from the data source rather than the model. The same callback composes a scenario brief, the model's rationale plus the scheduled stress-event notes plus a trimmed echo of the user's own words, which the archetype agents read so the described situation drives their stances.
 - Orchestrator (`SequentialAgent`): the run lifecycle. Setup, then the simulate loop, then analyse. Wraps the simulation engine as an `AgentTool` or calls it as a service.
 - Simulate loop (`LoopAgent`, up to N ticks): advances the deterministic engine, and every k ticks re-invokes the archetype agents to refresh stances based on the new market state and any new news.
 - Analyst (`LlmAgent`): reads the deterministic event log after the run and writes the plain-language narrative of how the exit unfolded. Grounded in the sim log and in Vertex AI Search. The simulation is the source of truth; the model interprets, it does not invent the dynamics.
@@ -221,10 +223,10 @@ Provide a deterministic baseline mode where the archetype stances come from a fi
 
 Build two MCP servers. Agents call them as tools. This satisfies the Track 1 MCP requirement and keeps data access clean and swappable.
 
-- Market Data MCP. Tools: `get_historical_window(instrument, start, end)`, `get_instrument_reference(instrument)` returning average daily volume, free float, and halt tier, and `get_liquidity_profile(instrument)`. Backed by a market data API and cached in Postgres. Used by the scenario author (to resolve and validate the instrument) and by the engine's statistical fitting.
-- News MCP. Tools: `get_event_news(instrument, period)` and `get_sentiment(text)`. Backed by a news source. Used by the archetype agents to read the scenario's news and set their mood.
+- Market Data MCP. Tools: `get_historical_window(instrument, start, end)`, `get_instrument_reference(instrument)` returning average daily volume, free float, and halt tier, and `get_liquidity_profile(instrument)`. Backed by the real Alpha Vantage `TIME_SERIES_DAILY` feed (key in `ALPHAVANTAGE_API_KEY`) for OHLCV and reference data, cached in Postgres and call-budgeted for the free tier, with a deterministic synthetic fallback when no key is set or a call is throttled. Used by the scenario author (to resolve and validate the instrument) and by the engine's statistical fitting.
+- News MCP. Tools: `get_event_news(instrument, period)` and `get_sentiment(text)`. Backed by the real Alpha Vantage `NEWS_SENTIMENT` feed (same key and Postgres cache as the market data MCP), with a deterministic synthetic crisis tape as the offline fallback. Used by the archetype agents to read the scenario's news and set their mood.
 
-Use real, authorised data sources. Historical data is sufficient for the build; live real-time feeds are a later upgrade, not a day-one requirement, and we will say so honestly in the submission. Declare every data source and API in the submission's data sources and third-party fields.
+Both servers use real, authorised Alpha Vantage data, declared in the submission. The deterministic synthetic fallback keeps the test suite and offline demos running with no key and no network. The flagship demo resolves CVNA (Carvana), the late-2022 crowded unwind, against these feeds. Historical daily data is sufficient for the build; live real-time feeds are a later upgrade, not a day-one requirement, and we say so honestly in the submission. Declare every data source and API in the submission's data sources and third-party fields.
 
 ---
 
@@ -334,7 +336,7 @@ Phased so that there is a working, demonstrable vertical slice as early as possi
 - Phase 3 — Frontend. Next.js plus shadcn. Scenario builder, the cascade and order-book visualisation, the metrics and explanation panels, the levers, and the cached-versus-live toggle. The FastAPI gateway with WebSocket streaming.
 - Phase 4 — Calibration and backtest. The critic agent and a backtest against one real historical episode. This is the credibility and most of the findings section.
 - Phase 4A — Memory. Wire the ADK MemoryService and Vertex AI Memory Bank. Write scenario history on each run and read it in the analyst; persist the critic's calibration adjustments and read them at run start. Scenario history first, calibration memory second (section 7A).
-- Phase 5 — Deploy to Google Cloud. Agents to Agent Engine, services to Cloud Run, Cloud SQL and Redis, Terraform. Record a cached replay of the flagship scenario for the demo.
+- Phase 5 — Deploy to Google Cloud. Agents to Agent Engine, services to Cloud Run, Cloud SQL and Redis, Terraform. Record a cached replay of the flagship scenario (CVNA, the late-2022 Carvana unwind) for the demo.
 - Phase 6 — Docs, diagram, eval, demo video, and the submission write-up fields.
 
 If time runs short, the minimum viable submission that still scores is: Phases 0, 1, 2, 3 and a deployed Cloud Run plus Agent Engine instance, with one scripted scenario shown via cached replay, plus the architecture diagram and clean docs. The calibration backtest (Phase 4), full memory (Phase 4A), and A2A are the first cuts, though a minimal scenario-history memory is cheap and worth keeping. Do not cut the deployment, the MCP servers, or the deterministic-versus-LLM split, because those are what the rules and the technical score require.
@@ -355,7 +357,7 @@ Both read AGENTS.md on entry. Keep a shared `docs/contracts.md` defining the eng
 - Behavioural fidelity is the hard part and we will not fully solve it in the time. We demonstrate plausibility on one replayed historical episode via the calibration critic and we are transparent about the gap. This is a genuine finding for the findings field, not a weakness to hide.
 - Thousands of agents is real, but only because most agents are deterministic and cheap. Keep the Gemini calls at the archetype and explanation level. A Gemini call in the per-agent per-tick loop will break both the cost and the latency.
 - The single-stock halt is a fixed, known constraint inside the simulation, not something the user tunes. It is one way the exit closes, not a separate feature.
-- Real-time data is a later upgrade. The build uses historical data, which is honest and sufficient.
+- The build pulls real Alpha Vantage data (daily OHLCV and news sentiment) for the instrument, with a deterministic synthetic fallback so offline runs need no key. Real-time intraday feeds are a later upgrade; daily historical data is honest and sufficient for the build.
 
 ---
 
