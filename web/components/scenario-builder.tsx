@@ -89,14 +89,19 @@ export function ScenarioBuilder({
   const { mode, levers } = state;
   const busy = status === "running" || status === "connecting";
   const cached = mode === "cached";
-  // A chosen ticker drives the instrument and sizes the position at a fixed %ADV on
-  // the gateway, so the manual position slider doesn't apply while one is set.
+  // In live mode the user types a ticker and sets their own position. In a saved
+  // example the position is fixed by the recording, so the live input does not apply.
   const symbol = (levers.symbol ?? "").trim().toUpperCase();
   const tickerActive = Boolean(symbol);
   // Cached mode only has recordings for the curated presets; any other ticker has no
   // recording and only runs on the live path.
   const isPreset = PRESET_SYMBOLS.has(symbol);
   const cachedNoRecording = cached && tickerActive && !isPreset;
+  // The position the selected saved recording actually sold (20% of that name's ADV);
+  // a blank/unknown ticker in cached falls back to the default CVNA recording.
+  const cachedShares =
+    TICKER_PRESETS.find((p) => p.symbol === symbol)?.recordedShares ??
+    TICKER_PRESETS.find((p) => p.symbol === "CVNA")!.recordedShares;
 
   const mixTotal = useMemo(
     () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
@@ -115,11 +120,17 @@ export function ScenarioBuilder({
           <Label>Run source</Label>
           <Segmented
             options={[
-              { key: "cached", label: "Cached", icon: <Database className="h-3.5 w-3.5" /> },
+              { key: "cached", label: "Saved example", icon: <Database className="h-3.5 w-3.5" /> },
               { key: "live", label: "Live", icon: <Radio className="h-3.5 w-3.5" /> },
             ]}
             value={mode}
-            onChange={(m) => setState({ ...state, mode: m })}
+            onChange={(m) => {
+              // Switching mode invalidates the displayed run (its source no longer
+              // matches), so clear it: the stale "Saved example / Complete" badge and
+              // results go away and the status returns to Ready until the next run.
+              if (m !== mode) onReset();
+              setState({ ...state, mode: m });
+            }}
             disabled={busy}
           />
           {mode === "live" && geminiEnabled ? (
@@ -130,15 +141,15 @@ export function ScenarioBuilder({
                 onChange={(e) => setState({ ...state, gemini: e.target.checked })}
                 className="accent-[var(--color-accent)]"
               />
-              Use real Gemini (Vertex AI) — spends credits
+              Use real Gemini (Vertex AI). This spends credits.
             </label>
           ) : null}
           <p className="text-[11px] leading-relaxed text-ink-faint">
             {cached
-              ? "Replays a recorded historical-reference episode — fully offline, identical every time."
+              ? "Replays a saved example crash. Fully offline and identical every time, so it is the easiest way to start."
               : state.gemini
-                ? "Runs the agents for real: Gemini sets each archetype's stance, the engine runs the market on the instrument's current real data."
-                : "Runs the engine now on the instrument's current real data (Alpha Vantage). This is today's conditions — it does not reproduce the historical crisis."}
+                ? "Runs the simulation for real, with Gemini deciding how each kind of investor reacts to your scenario and the latest news."
+                : "Runs the simulation on the ticker's current real market data. This reflects today's conditions, not the original crisis."}
           </p>
         </div>
 
@@ -146,7 +157,7 @@ export function ScenarioBuilder({
 
         {/* Plain-language scenario */}
         <div className="space-y-2">
-          <Label>Position & stress event</Label>
+          <Label>Stress event</Label>
           <textarea
             value={levers.scenario_text}
             onChange={(e) => set({ scenario_text: e.target.value })}
@@ -156,18 +167,25 @@ export function ScenarioBuilder({
               "w-full resize-none rounded-[8px] border border-line bg-surface-2/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none",
               (cached || busy) && "opacity-55",
             )}
-            placeholder="Describe the position you hold and the crisis you want to stress-test…"
+            placeholder="Describe the crisis you want to test. The more severe your wording, the harder the simulated shock. For example: a sudden bankruptcy scare with panic selling and no buyers."
           />
+          {!cached ? (
+            <Caption>
+              Your wording drives the run. Together with the ticker&apos;s latest news, it sets how
+              severe the crisis is. A mild description may leave the exit open; a severe one can
+              close it.
+            </Caption>
+          ) : null}
         </div>
 
-        {/* Instrument — type any ticker, or quick-pick a curated name. */}
+        {/* Instrument - live: type any ticker. cached: pick a curated recording. */}
         <div className="space-y-2">
-          <Label>Instrument</Label>
+          <Label>Stock (ticker)</Label>
           <input
             type="text"
             value={symbol}
             onChange={(e) => set({ symbol: e.target.value.toUpperCase().replace(/[^A-Z.]/g, "") })}
-            placeholder="Ticker, e.g. AAPL — blank = flagship (CVNA)"
+            placeholder={cached ? "Leave blank for CVNA" : "Type a ticker, e.g. AAPL"}
             disabled={busy}
             spellCheck={false}
             className={cn(
@@ -175,70 +193,87 @@ export function ScenarioBuilder({
               busy && "opacity-55",
             )}
           />
-          <div className="flex flex-wrap gap-1">
-            {QUICK_PICKS.map((p) => (
-              <button
-                key={p.symbol}
-                disabled={busy}
-                onClick={() => set({ symbol: p.symbol })}
-                className={cn(
-                  "rounded-[6px] border px-2 py-1 text-[11px] transition-colors",
-                  symbol === p.symbol
-                    ? "border-line-strong bg-ink text-bg"
-                    : "border-line bg-surface-2/60 text-ink-muted hover:text-ink",
-                )}
-              >
-                {p.symbol}
-              </button>
-            ))}
-            <button
-              disabled={busy || !tickerActive}
-              onClick={() => set({ symbol: "" })}
-              className={cn(
-                "rounded-[6px] border border-line px-2 py-1 text-[11px] text-ink-muted transition-colors hover:text-ink",
-                !tickerActive && "opacity-40",
-              )}
-            >
-              Flagship
-            </button>
-          </div>
+          {/* Curated quick-picks (saved recordings) belong to cached mode. */}
+          {cached ? (
+            <div className="flex flex-wrap gap-1">
+              {QUICK_PICKS.map((p) => (
+                <button
+                  key={p.symbol}
+                  disabled={busy}
+                  onClick={() => set({ symbol: p.symbol })}
+                  className={cn(
+                    "rounded-[6px] border px-2 py-1 text-[11px] transition-colors",
+                    symbol === p.symbol
+                      ? "border-line-strong bg-ink text-bg"
+                      : "border-line bg-surface-2/60 text-ink-muted hover:text-ink",
+                  )}
+                >
+                  {p.symbol}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <Caption>{instrumentCaption({ cached, symbol, isPreset, avEnabled })}</Caption>
           {cachedNoRecording ? (
             <p className="text-[11px] leading-relaxed text-[var(--color-halt)]">
-              No cached recording for {symbol}. Cached only has the curated names
-              ({QUICK_PICKS.map((p) => p.symbol).join(", ")}); switch to Live to run {symbol}.
+              No saved recording for {symbol}. Saved examples only cover{" "}
+              {QUICK_PICKS.map((p) => p.symbol).join(", ")}. Switch to Live to run {symbol} on
+              current data.
             </p>
           ) : null}
         </div>
 
-        {/* Position size */}
-        <div
-          className={cn(
-            "space-y-1",
-            (cached || tickerActive) && "pointer-events-none opacity-55",
-          )}
-        >
-          <Slider
-            label="Position size"
-            display={`${fmtInt(levers.position_size)} shares`}
-            min={50_000}
-            max={1_000_000}
-            step={10_000}
-            value={levers.position_size}
-            onChange={(v) => set({ position_size: v })}
-          />
-          <Caption>
-            {tickerActive
-              ? "Set automatically to 20% of the selected ticker's ADV. Switch to “Flagship” above to set it by hand."
-              : "The number of shares you are trying to sell."}
-          </Caption>
-        </div>
+        {/* Position size - a free, editable share count on the live path (your real
+            position); cached replays a fixed recording, so it doesn't apply there. */}
+        {cached ? (
+          <div className="space-y-1.5">
+            <Label>Position size</Label>
+            <div className="flex items-baseline justify-between rounded-[8px] border border-line bg-surface-2/40 px-3 py-2">
+              <span className="text-[12.5px] text-ink">
+                <span className="tnum">{fmtInt(cachedShares)}</span> shares
+              </span>
+              <span className="text-[11px] text-ink-faint">fixed by recording</span>
+            </div>
+            <Caption>
+              This saved example sold a fixed block (about 20% of the stock&apos;s average daily
+              volume), so it changes with the chosen stock, not by hand. Switch to Live to set
+              your own position.
+            </Caption>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label>Position size</Label>
+            <div className="relative">
+              <input
+                type="number"
+                min={1}
+                step={10_000}
+                value={levers.position_size}
+                onChange={(e) =>
+                  set({ position_size: Math.max(1, Math.round(Number(e.target.value) || 0)) })
+                }
+                disabled={busy}
+                className={cn(
+                  "tnum w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 pr-14 text-[12.5px] text-ink focus:border-line-strong focus:outline-none",
+                  busy && "opacity-55",
+                )}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-ink-faint">
+                shares
+              </span>
+            </div>
+            <Caption>
+              How many shares you are trying to sell. This is your real position, and it runs
+              exactly as entered. A bigger position is harder to get out.
+            </Caption>
+          </div>
+        )}
 
         {/* Market participants (population_size) */}
         <div className={cn("space-y-1", cached && "pointer-events-none opacity-55")}>
           <Slider
-            label="Market participants"
-            display={`${fmtInt(levers.population_size)} agents`}
+            label="Number of traders"
+            display={`${fmtInt(levers.population_size)} traders`}
             min={1_000}
             max={20_000}
             step={500}
@@ -246,8 +281,8 @@ export function ScenarioBuilder({
             onChange={(v) => set({ population_size: v })}
           />
           <Caption>
-            How many traders make up the market. More participants = a deeper, more
-            liquid market that absorbs the same order more easily.
+            How many traders are in the simulated market. More traders means a deeper, more liquid
+            market that can absorb your selling more easily.
           </Caption>
         </div>
 
@@ -261,8 +296,8 @@ export function ScenarioBuilder({
             disabled={busy}
           />
           <Caption>
-            How aggressively you sell into each tick&apos;s volume. Applies to Live runs
-            only — cached mode replays a fixed recording.
+            How hard you push to sell at each step. Faster selling gets out sooner but pushes the
+            price down more. Applies to live runs only; a saved example just replays a recording.
           </Caption>
         </div>
 
@@ -270,10 +305,11 @@ export function ScenarioBuilder({
 
         {/* Crowding mix */}
         <div className={cn("space-y-3", cached && "pointer-events-none opacity-55")}>
-          <Label>Crowding mix</Label>
+          <Label>Who is in the market</Label>
           <Caption>
-            Each investor type&apos;s share of the trading crowd — i.e. of the market.
-            The shares are normalised to total 100%.
+            What share of the crowd each kind of investor makes up. A market packed with forced and
+            panic sellers and few buyers is what makes an exit close. The shares are scaled to total
+            100%.
           </Caption>
           {INVESTOR_TYPES.map((t) => (
             <Slider
@@ -291,12 +327,12 @@ export function ScenarioBuilder({
         </div>
       </div>
 
-      {/* Actions — pinned, always visible */}
+      {/* Actions - pinned, always visible */}
       <div className="shrink-0 border-t border-line bg-surface/95 p-4">
         <div className="flex gap-2">
           <Button onClick={onRun} disabled={busy} className="flex-1" size="lg">
             <Play className="h-4 w-4" strokeWidth={2.2} />
-            {busy ? "Running…" : cached ? "Replay cascade" : "Run simulation"}
+            {busy ? "Running…" : cached ? "Replay example" : "Run simulation"}
           </Button>
           <Button onClick={onReset} variant="outline" size="lg" disabled={busy} aria-label="Reset">
             <RotateCcw className="h-4 w-4" />
@@ -336,16 +372,16 @@ function instrumentCaption({
 }): string {
   if (cached) {
     if (!symbol)
-      return "Cached replays the recorded CVNA flagship cascade — fixed, offline, identical every time.";
+      return "Replays the saved Carvana (CVNA) 2022 crash. Fixed, offline, and identical every time.";
     if (isPreset)
-      return `Cached replays the recorded historical-reference episode for ${symbol} (fixed prices). Position sized at 20% of ADV so deep and thin names compare fairly.`;
-    return `Cached has no recording for ${symbol} — switch to Live to run it on current data.`;
+      return `Replays the saved ${symbol} example with fixed historical prices. Identical every time.`;
+    return `No saved example for ${symbol}. Switch to Live to run it on current data.`;
   }
   if (!symbol)
-    return "Live runs the engine on the CVNA flagship (curated reference) with your manual position size below.";
+    return "Type a ticker to pull its current data. Left blank, it uses CVNA. Your position size and stress description below drive the run.";
   return avEnabled
-    ? `Live fetches ${symbol}'s current real data (price, ADV, volatility) from Alpha Vantage and runs the engine on it — today's conditions, not the historical crisis. Position sized at 20% of ADV.`
-    : `Live runs ${symbol} on a curated/synthetic reference — no Alpha Vantage key is configured, so this is not real current data. Position sized at 20% of ADV.`;
+    ? `Pulls ${symbol}'s current real data (price, volume, volatility) from Alpha Vantage and runs the simulation on it. This is today's market, not the original crisis. Your stress description and the latest news set how severe it gets.`
+    : `Runs ${symbol} on stand-in data (no Alpha Vantage key is set), so these are not real current numbers. Your stress description sets how severe the crisis gets.`;
 }
 
 function Divider() {

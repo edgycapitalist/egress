@@ -12,7 +12,7 @@ import { FillProgress } from "@/components/fill-progress";
 import { MetricsPanel } from "@/components/metrics-panel";
 import { AnalystPanel } from "@/components/analyst-panel";
 import { useRun } from "@/lib/useRun";
-import type { Levers, Metrics, RunSource, SourcedInput } from "@/lib/types";
+import type { Levers, Metrics, RunConfig, RunSource, SourcedInput } from "@/lib/types";
 import { fmtPct } from "@/lib/utils";
 
 const HTTP_BASE = process.env.NEXT_PUBLIC_GATEWAY_HTTP ?? "http://127.0.0.1:8000";
@@ -22,7 +22,7 @@ const DEFAULT_LEVERS: Levers = {
     "A heavily crowded name is hit by a surprise liquidity and bankruptcy scare. " +
     "Forced sellers hit margin calls, panic and trend sellers pile on, and " +
     "bargain-hunter and market-maker support is thin.",
-  symbol: "",
+  symbol: "CVNA",
   position_size: 250_000,
   population_size: 5_000,
   exit_speed: "measured",
@@ -37,9 +37,9 @@ const DEFAULT_LEVERS: Levers = {
 };
 
 const SOURCE_LABEL: Record<RunSource, string> = {
-  cached: "Cached replay",
-  "live-baseline": "Live · deterministic",
-  "live-gemini": "Live · Gemini",
+  cached: "Saved example",
+  "live-baseline": "Live (no AI)",
+  "live-gemini": "Live (Gemini)",
 };
 
 export default function Page() {
@@ -78,7 +78,7 @@ export default function Page() {
 
   // Fetch the sourced inputs for the instrument the run resolved to, matching the
   // run's mode: a live run gets the real Alpha Vantage feed, cached gets the
-  // recorded/curated reference — so the panel always agrees with the simulation.
+  // recorded/curated reference - so the panel always agrees with the simulation.
   const symbol = state.config?.instrument.symbol;
   const live = state.source !== null && state.source !== "cached";
   useEffect(() => {
@@ -128,18 +128,19 @@ export default function Page() {
         </div>
       </header>
 
-      {/* What this is — for someone arriving cold. */}
+      {/* What this is - for someone arriving cold. */}
       <div className="mb-4 rounded-[var(--radius)] border border-line bg-surface/60 px-4 py-3">
         <p className="max-w-3xl text-[13.5px] leading-relaxed text-ink">
-          Egress simulates how an investment position would behave in a crisis — so you can see
-          whether you could <span className="text-ink">actually sell it</span> before the exit
-          closes, how far the price falls while you try, and how much of the position stays stuck.
+          Say you hold a large position and a crisis hits. Could you actually
+          <span className="text-ink"> sell it before the exit closes</span>? Egress answers that.
+          It runs a simulated market of thousands of traders, then shows how far the price falls
+          while you sell, how much of your position you get out, and how much stays stuck.
         </p>
         <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
           <Info className="h-3 w-3 shrink-0" />
-          The market mechanics are deterministic code; in a live Gemini run a few agents (via
-          Vertex AI) set each investor type&apos;s mood and explain the run — cached and baseline
-          runs use deterministic stand-ins.
+          The market itself runs on fixed, repeatable code. On a live Gemini run, a few AI agents
+          (Google Vertex AI) set how each kind of investor behaves and write the explanation.
+          Cached and baseline runs use simple stand-ins instead, with no AI.
         </p>
       </div>
 
@@ -175,7 +176,7 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Price path"
-                  caption="The price the crowd's selling produces. A steep fall — and a halt marker — means the exit is closing as you try to sell."
+                  caption="The price as the crowd sells. A steep fall, or a halt marker, means the exit is closing while you are still trying to sell."
                   right={
                     <div className="flex items-center gap-2">
                       {shockCount > 0 ? (
@@ -204,8 +205,8 @@ export default function Page() {
 
               <Card className="fadeup overflow-hidden">
                 <CardHeader
-                  title="Live interactions"
-                  caption="The market as it executes: buy-side liquidity draining and the seller types surging tick by tick. When sellers overwhelm the thin support, the book empties and trades stop."
+                  title="Inside the market"
+                  caption="What is happening under the price. The top shows the buyers' orders (the support you sell into) drying up; the bottom shows which kinds of sellers are hitting the market each step. When sellers overwhelm the buyers, the book empties and trading stops."
                 />
                 <LiveInteractions ticks={state.ticks} totalTicks={state.totalTicks} />
               </Card>
@@ -213,11 +214,11 @@ export default function Page() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Card className="fadeup overflow-hidden">
                   <CardHeader
-                    title="Sourced inputs"
+                    title="Market data used"
                     caption={
                       live
-                        ? "This live run's current real data (Alpha Vantage) — price, ADV, volatility — over the most recent ~100 trading days. Free-tier data is ~100 days of daily history, so live uses current conditions, not the historical crisis window."
-                        : "Recorded historical-reference values for this cached replay — representative price, volume and volatility for the episode window, not a live quote."
+                        ? "The real, current numbers this run used (from Alpha Vantage): recent price, average daily volume, and volatility. The free data feed covers about the last 100 trading days, so a live run reflects today's conditions, not the original crisis."
+                        : "The recorded reference numbers for this saved example: a representative price, volume, and volatility for that episode. These are not a live quote."
                     }
                   />
                   <SourcedInputs data={sourced} loading={sourcedLoading} />
@@ -234,16 +235,16 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Outcome"
-                  caption="The decision aid: could you get out, how far did the price move, and how much stayed stuck."
+                  caption="The bottom line: could you get out, how far did the price move against you, and how much was left unsold."
                 />
-                <Verdict metrics={state.metrics} />
+                <Verdict metrics={state.metrics} source={state.source} config={state.config} />
                 <MetricsPanel metrics={state.metrics} />
               </Card>
 
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Explanation"
-                  caption="A plain-language account of why the exit closed (or did not), written only from the run's own numbers."
+                  caption="A plain-language summary of why the exit held or closed, written only from this run's own numbers."
                 />
                 <AnalystPanel
                   analysis={state.analysis}
@@ -257,37 +258,62 @@ export default function Page() {
       </div>
 
       <footer className="mt-5 flex items-center justify-between text-[11px] text-ink-faint">
-        <span>Historical data via Alpha Vantage · simulated, not investment advice.</span>
+        <span>Market data via Alpha Vantage. A simulation, not investment advice.</span>
         <span className="tnum">Egress AI</span>
       </footer>
     </div>
   );
 }
 
-function Verdict({ metrics }: { metrics: Metrics | null }) {
+function Verdict({
+  metrics,
+  source,
+  config,
+}: {
+  metrics: Metrics | null;
+  source: RunSource | null;
+  config: RunConfig | null;
+}) {
   if (!metrics) return null;
   const closed = metrics.fill_rate < 0.999;
+  const live = source !== null && source !== "cached";
+  const ci = config?.crisis_intensity;
   return (
     <div className="border-b border-line px-4 pb-3.5 pt-1">
       <p className="text-[14.5px] leading-relaxed text-ink">
         {closed ? (
           <>
-            In this scenario you could sell only{" "}
+            You managed to sell only{" "}
             <span className="tnum font-semibold text-sell">{fmtPct(metrics.fill_rate, 0)}</span> of
-            the position before the exit closed;{" "}
-            <span className="tnum font-semibold text-sell">{fmtPct(metrics.pct_stuck, 0)}</span>{" "}
-            stayed stuck.
+            your position before the exit closed.{" "}
+            <span className="tnum font-semibold text-sell">{fmtPct(metrics.pct_stuck, 0)}</span> was
+            left stuck, unsellable.
           </>
         ) : (
           <>
-            In this scenario the full position sold (
-            <span className="tnum font-semibold text-buy">{fmtPct(metrics.fill_rate, 0)}</span>);
-            none stayed stuck.
+            You sold your whole position (
+            <span className="tnum font-semibold text-buy">{fmtPct(metrics.fill_rate, 0)}</span>).
+            Nothing was left stuck. The exit stayed open.
           </>
         )}
       </p>
+      {live && ci != null ? (
+        <p className="mt-1.5 text-[12px] text-ink-faint">
+          Simulated crisis severity:{" "}
+          <span className="text-ink-muted">{crisisLabel(ci)}</span> (intensity {ci.toFixed(2)}).
+          Set by your stress description and the ticker&apos;s latest news.
+        </p>
+      ) : null}
     </div>
   );
+}
+
+// Plain-language band for the engine's crisis intensity (0.3 mild to 1.6 extreme).
+function crisisLabel(ci: number): string {
+  if (ci < 0.5) return "mild";
+  if (ci < 0.85) return "moderate";
+  if (ci < 1.2) return "severe";
+  return "extreme";
 }
 
 function scaleMix(mix: Record<string, number> | undefined): Levers["crowding_mix"] | null {
@@ -326,11 +352,11 @@ function EmptyState() {
         <Activity className="h-5 w-5 text-ink-faint" strokeWidth={1.6} />
       </div>
       <div className="max-w-sm space-y-1.5">
-        <p className="text-[14px] text-ink">Run the cascade</p>
+        <p className="text-[14px] text-ink">Run your first simulation</p>
         <p className="text-[12.5px] leading-relaxed text-ink-faint">
-          Start with the recorded flagship replay, or switch to a live run and vary the position
-          size, the number of market participants, the exit speed, and the crowding mix to find the
-          point where the exit closes.
+          Press Run to replay the saved Carvana 2022 example, or switch to Live to test your own
+          ticker, position size, and crisis. Then watch the price, the order book, and how much of
+          the position you actually manage to sell.
         </p>
       </div>
     </Card>
@@ -338,7 +364,7 @@ function EmptyState() {
 }
 
 function Logo() {
-  // An exit door with an arrow leaving through it — the position trying to get out.
+  // An exit door with an arrow leaving through it - the position trying to get out.
   return (
     <div className="relative flex h-9 w-9 items-center justify-center rounded-[9px] border border-line-strong bg-surface-2">
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">

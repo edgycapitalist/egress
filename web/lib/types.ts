@@ -1,6 +1,6 @@
 // Shapes mirrored from the engine ⇄ agents boundary contract (docs/contracts.md)
 // and the gateway's WebSocket frame protocol (gateway/app.py). The frontend is a
-// thin consumer of these — it never invents dynamics, it renders what the engine
+// thin consumer of these - it never invents dynamics, it renders what the engine
 // produced.
 
 export const INVESTOR_TYPES = [
@@ -41,6 +41,7 @@ export interface RunConfig {
   max_ticks: number;
   ticks_per_window: number;
   baseline_mode: boolean;
+  crisis_intensity?: number; // crisis magnitude; 1.0 = neutral (absent on older replays)
 }
 
 export interface Fill {
@@ -110,22 +111,24 @@ export interface Levers {
 }
 
 // Tickers for the instrument picker. The same symbol means different things by mode:
-// in CACHED mode it replays a recorded historical-reference episode; in LIVE mode the
-// gateway fetches the name's CURRENT real data (Alpha Vantage) and runs the engine on
-// it. "" keeps the flagship + manual size. Labels are mode-aware via tickerLabel().
+// in a SAVED EXAMPLE (cached) it replays a recorded historical-reference episode; in
+// LIVE mode the gateway fetches the name's CURRENT real data (Alpha Vantage) and runs
+// the engine on it. "" replays the default CVNA recording. recordedShares is the
+// position each saved recording actually sold (20% of that name's ADV), so the cached
+// view can show the real number rather than the live input lever.
 export interface TickerPreset {
-  symbol: string; // "" = flagship / manual size
+  symbol: string; // "" = the default CVNA recording
   name: string; // short company name
   era: string; // the historical reference window the cached recording represents
   group: "liquid" | "illiquid" | "custom";
+  recordedShares: number; // shares the saved recording sold (20% of ADV)
 }
 
 export const TICKER_PRESETS: TickerPreset[] = [
-  { symbol: "", name: "Flagship (CVNA)", era: "", group: "custom" },
-  { symbol: "CVNA", name: "Carvana", era: "late-2022", group: "illiquid" },
-  { symbol: "SIVB", name: "SVB Financial", era: "Mar-2023", group: "illiquid" },
-  { symbol: "AAPL", name: "Apple", era: "bad-earnings day", group: "liquid" },
-  { symbol: "SPY", name: "S&P 500 ETF", era: "drawdown", group: "liquid" },
+  { symbol: "CVNA", name: "Carvana", era: "late-2022", group: "illiquid", recordedShares: 2_400_000 },
+  { symbol: "SIVB", name: "SVB Financial", era: "Mar-2023", group: "illiquid", recordedShares: 260_000 },
+  { symbol: "AAPL", name: "Apple", era: "bad-earnings day", group: "liquid", recordedShares: 11_000_000 },
+  { symbol: "SPY", name: "S&P 500 ETF", era: "drawdown", group: "liquid", recordedShares: 15_000_000 },
 ];
 
 // Real sourced inputs for an instrument (from the gateway's /api/instrument).
