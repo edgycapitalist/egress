@@ -123,9 +123,14 @@ def test_scenario_defaults_includes_population_size() -> None:
 
 
 def test_instrument_endpoint_reports_source() -> None:
-    # Offline (no AV key) the source is the synthetic fallback, honestly labelled.
-    body = TestClient(app).get("/api/instrument", params={"symbol": "CVNA"}).json()
-    assert body["symbol"] == "CVNA"
-    assert body["reference_price"] > 0 and body["adv"] > 0
-    assert body["realized_vol_daily"] >= 0
-    assert body["source"] in {"alphavantage", "synthetic"}
+    client = TestClient(app)
+    # A curated ticker returns its preset values, so the panel matches the run.
+    cvna = client.get("/api/instrument", params={"symbol": "CVNA"}).json()
+    assert cvna["symbol"] == "CVNA"
+    assert cvna["source"] == "curated"
+    assert cvna["reference_price"] > 0 and cvna["adv"] > 0
+    # A non-preset symbol falls through to the MCP, honestly labelled offline.
+    other = client.get("/api/instrument", params={"symbol": "ACME"}).json()
+    assert other["reference_price"] > 0 and other["adv"] > 0
+    assert other["realized_vol_daily"] >= 0
+    assert other["source"] in {"alphavantage", "synthetic"}

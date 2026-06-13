@@ -37,6 +37,22 @@ from gateway.run_config import EXIT_SPEED_PRESETS, build_run_config, scenario_pr
 # The committed cached replay lives under docs/ (version-controlled; runs/ is
 # throwaway generated output). This is what the offline demo streams.
 FLAGSHIP_REPLAY = Path(os.getenv("EGRESS_FLAGSHIP_REPLAY", "docs/replays/flagship-42.ndjson"))
+# Per-ticker cached recordings live beside the flagship (e.g. aapl.ndjson). Selecting a
+# curated ticker in cached mode streams its recording instead of the CVNA flagship.
+REPLAY_DIR = FLAGSHIP_REPLAY.parent
+
+
+def _cached_replay_for(symbol: str | None) -> Path:
+    """The cached recording for a chosen ticker, falling back to the flagship.
+
+    An empty/unknown symbol (or a name with no committed recording) keeps the CVNA
+    flagship demo, so cached mode is always safe and offline.
+    """
+    if symbol:
+        candidate = REPLAY_DIR / f"{str(symbol).strip().lower()}.ndjson"
+        if candidate.exists():
+            return candidate
+    return FLAGSHIP_REPLAY
 
 # Demo pacing: ms of dwell between successive tick batches so the cascade animates.
 DEFAULT_PACE_MS = int(os.getenv("EGRESS_PACE_MS", "110"))
@@ -94,6 +110,23 @@ def instrument_reference(symbol: str, period: str = "recent") -> dict[str, Any]:
     call runs in a worker thread, not the event loop.
     """
     import datetime as _dt
+
+    from engine.presets import get_preset
+
+    # A curated ticker shows the same real reference values that drive its run, so the
+    # panel always agrees with the simulation (and stays consistent offline).
+    preset = get_preset(symbol)
+    if preset is not None:
+        return {
+            "symbol": preset.symbol,
+            "name": preset.name,
+            "reference_price": preset.reference_price,
+            "adv": preset.adv,
+            "free_float": preset.free_float,
+            "realized_vol_daily": preset.volatility,
+            "bars": 0,
+            "source": "curated",
+        }
 
     from mcp.market_data.data import get_historical_window, get_instrument_reference
 
@@ -163,10 +196,11 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
             await ws.send_json({"type": "error", "message": f"Live run failed: {exc}"})
             return
     else:
-        if not FLAGSHIP_REPLAY.exists():
+        replay_file = _cached_replay_for(levers.get("symbol"))
+        if not replay_file.exists():
             await ws.send_json({"type": "error", "message": "Flagship replay not found."})
             return
-        replay_path, source, analysis = str(FLAGSHIP_REPLAY), "cached", None
+        replay_path, source, analysis = str(replay_file), "cached", None
 
     for frame in frames_from_replay(
         replay_path, source=source, batch_size=batch_size, analysis=analysis
