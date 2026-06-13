@@ -45,6 +45,12 @@ LOOKBACK = 5  # ticks for the recent-return signal
 STALL_TICKS = 40  # end the run if no trades print for this long and the exit is stuck
 # How far the real volatility can scale the cascade propensity, either way.
 VOL_GAIN_BOUNDS = (0.05, 2.5)
+# Volatility is a fragility *amplifier*, not a gate. A name's shock response is
+# floored at FRAG_FLOOR of the full effect even when its volatility is near zero, so
+# a severe enough shock can break a calm, deep name — it is just harder than for a
+# fragile one. At vol_gain == 1 the fragility factor is 1, so the flagship (and any
+# reference-vol name) is unchanged. frag = FRAG_FLOOR + (1 - FRAG_FLOOR) * vol_gain.
+FRAG_FLOOR = 0.45
 # Ticks that stand in for one ADV's worth of trading. The natural per-tick market
 # volume a participation algo works against is ADV / this, so the full run (max_ticks)
 # represents a few sessions — enough to complete a large %ADV exit when liquidity allows.
@@ -69,6 +75,13 @@ class Engine:
         self.vol_gain = float(
             np.clip(config.instrument.volatility / REFERENCE_VOLATILITY, lo, hi)
         )
+        # Fragility amplifier: floored so a big shock still bites a calm name; 1.0 at
+        # the reference vol (flagship unchanged).
+        self.frag = FRAG_FLOOR + (1.0 - FRAG_FLOOR) * self.vol_gain
+        # Overall crisis magnitude (from the described stress + news, set on the
+        # config by the live path). 1.0 = neutral baseline; >1 escalates the cascade
+        # independently of volatility, so a severe crisis can close even a deep name.
+        self.crisis = float(config.crisis_intensity)
 
         self.book = OrderBook(self.tick_size, ref)
         self.population = Population(config, self.rng)
@@ -131,11 +144,14 @@ class Engine:
         # name barely gaps, a fragile one gaps hard.
         if shock and shock.kind == "price":
             self.last_price = snap_to_tick(
-                self.last_price * (1.0 - 0.08 * shock.severity * self.vol_gain), self.tick_size
+                self.last_price * (1.0 - 0.08 * shock.severity * self.crisis * self.frag),
+                self.tick_size,
             )
 
         drop = max(0.0, (self.ref_price - self.last_price) / self.ref_price)
-        self.stress = self.stress_regime.step(drop, shock_sev, self.rng, self.vol_gain)
+        self.stress = self.stress_regime.step(
+            drop, shock_sev, self.rng, self.vol_gain, frag=self.frag, crisis=self.crisis
+        )
         recent_return = (self.last_price - self._price_hist[0]) / self._price_hist[0]
 
         view = MarketView(

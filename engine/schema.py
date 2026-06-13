@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "0.2.0"
+SCHEMA_VERSION = "0.3.0"
 
 #: Reference daily realized volatility. A name at this level has ``vol_gain == 1``
 #: (the crisis-fragile regime the engine was originally tuned to); a calmer name
@@ -137,6 +137,17 @@ class RunConfig(BaseModel):
     max_ticks: int = Field(gt=0)
     ticks_per_window: int = Field(gt=0)
     baseline_mode: bool = True
+    crisis_intensity: float = Field(
+        default=1.0,
+        ge=0,
+        description=(
+            "Overall magnitude of the described/news-driven crisis, decoupled from "
+            "trailing volatility. 1.0 is the neutral baseline (the engine behaves "
+            "exactly as if this field were absent); >1 is a severe crisis that can "
+            "close the exit on even a calm, deep name; <1 is a mild stress. The live "
+            "path derives it from the user's stress text and real news sentiment."
+        ),
+    )
 
     @model_validator(mode="after")
     def _coherent(self) -> RunConfig:

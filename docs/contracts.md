@@ -95,7 +95,8 @@ run starts). Consumed by engine setup and by the archetype agents.
 
   "max_ticks": 600,                // hard cap on run length
   "ticks_per_window": 10,          // k: how often stances refresh
-  "baseline_mode": true            // true = fixed-heuristic stances, zero LLM calls
+  "baseline_mode": true,           // true = fixed-heuristic stances, zero LLM calls
+  "crisis_intensity": 1.0          // crisis magnitude; 1.0 = neutral (omit = default)
 }
 ```
 
@@ -108,6 +109,7 @@ run starts). Consumed by engine setup and by the archetype agents.
   is present (`participation_rate` for `participation`, `horizon_ticks` for `twap`).
 - `instrument.tick_size > 0`, `reference_price > 0`, `volatility > 0`.
 - Every `shock_schedule[i].tick` is in `[0, max_ticks)`; `severity` in `[0, 1]`.
+- `crisis_intensity ≥ 0` (optional; defaults to `1.0`, the neutral baseline).
 
 **Liquidity semantics (v0.2.0).** The engine consumes the real instrument data so a
 run tracks the name, not just the scenario: resting book depth and per-agent order
@@ -117,6 +119,17 @@ scales how readily the name cascades — its stress transitions and the size of 
 price-shock gap. A deep, low-vol name (e.g. SPY) absorbs a large `%ADV` exit without
 halting; a thin, high-vol name (e.g. SIVB) closes. A name at the reference vol with
 the flagship's ADV reproduces the pre-v0.2.0 behaviour exactly.
+
+**Crisis intensity (v0.3.0).** `crisis_intensity` is the overall magnitude of the
+described/news-driven crisis, **decoupled from trailing volatility**. Volatility is now
+a fragility *amplifier* (floored, so never zero), not a gate: at a given intensity a
+calm name responds less than a fragile one, but a severe enough crisis can still close
+even a deep name's exit. `crisis_intensity` scales the price-shock gap and the
+shock/drop-driven stress (which withdraws market-maker depth); `1.0` is the neutral
+baseline and reproduces v0.2.0 exactly. The live gateway derives it deterministically
+from the user's stress text and the instrument's real news sentiment
+(`gateway/crisis.py`), so the description genuinely drives the outcome; the discrimination
+harness pins a fixed *moderate* intensity across all names (no per-episode tuning).
 
 ---
 
@@ -314,3 +327,4 @@ version so an old recording is always interpretable.
 | --- | --- | --- |
 | `0.1.0` | 2026-06-11 | Initial boundary: `RunConfig`, `Stance`, `MarketState`, `TickEvent`, `Metrics`, NDJSON record, and the `session.state` keys. |
 | `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |
+| `0.3.0` | 2026-06-13 | Added `crisis_intensity` (optional, defaults to `1.0`). Crisis magnitude is now decoupled from trailing volatility: volatility is a floored fragility amplifier, not a gate, so a severe enough crisis can close even a calm, deep name while a mild one leaves it open. The live path derives the intensity from the stress text + real news sentiment. Backward-compatible — an omitted `crisis_intensity` reproduces v0.2.0 behaviour. |

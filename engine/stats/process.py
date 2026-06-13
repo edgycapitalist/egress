@@ -35,18 +35,28 @@ class StressRegime:
         shock_severity: float,
         rng: np.random.Generator,
         vol_gain: float = 1.0,
+        frag: float = 1.0,
+        crisis: float = 1.0,
     ) -> float:
         """Advance one tick. ``drop`` is the fractional fall from reference price.
 
-        ``vol_gain`` (the name's daily volatility relative to the reference level)
-        calibrates how prone this instrument is to cascade: a calm, deep name
-        (``vol_gain`` well below 1) resists flipping into stress and stays mild even
-        when it does, so its market makers keep quoting and the exit stays open; a
-        fragile name (``vol_gain`` above 1) ignites readily. At ``vol_gain == 1``
-        every term reduces to the original fixed-probability regime.
+        Three calibrators, deliberately playing different roles:
+
+        * ``vol_gain`` — the name's daily volatility relative to the reference level —
+          gates only the *spontaneous* tendency to flip into stress and the sustained
+          stress floor while flipped. A calm, deep name rarely ignites on its own.
+        * ``frag`` — the fragility amplifier (floored, so never zero) — and ``crisis``
+          — the described/news crisis magnitude — together drive the *shock-and-drop*
+          pressure. This is decoupled from ``vol_gain`` on purpose: a severe enough
+          shock raises pressure enough to flip and stress even a calm name, instead of
+          volatility hard-gating the response. ``frag`` is 1 at the reference vol.
+
+        At ``vol_gain == 1`` (so ``frag == 1``) and ``crisis == 1`` every term reduces
+        to the original fixed-probability regime, so the flagship is unchanged.
         """
         raw_pressure = max(0.0, drop) * 2.0 + shock_severity
-        pressure = raw_pressure * vol_gain
+        # Shock/drop forcing, amplified by fragility and crisis but not vol-gated.
+        pressure = raw_pressure * crisis * frag
         if self.stressed:
             if rng.random() < self.p_sc * (1.0 - min(pressure, 0.9)):
                 self.stressed = False
@@ -55,7 +65,7 @@ class StressRegime:
                 self.stressed = True
 
         target = 1.0 if self.stressed else 0.0
-        target = float(np.clip(target * 0.6 * vol_gain + raw_pressure * vol_gain, 0.0, 1.0))
+        target = float(np.clip(target * 0.6 * vol_gain + raw_pressure * crisis * frag, 0.0, 1.0))
         # Smooth so stress eases rather than snapping back.
         self.level += 0.5 * (target - self.level)
         return self.level
