@@ -31,6 +31,14 @@ from engine.scenarios import flagship_scenario
 # Fixed across every episode: the position is this fraction of the name's ADV.
 POSITION_FRAC = DEFAULT_POSITION_FRAC
 
+# A single fixed, *moderate* crisis intensity applied identically to every episode —
+# the whole point of the test is no per-episode tuning. It is deliberately below the
+# flagship's full-crisis 1.0: a moderate stress that a genuinely deep name absorbs
+# (so the liquid group stays open) while a thin, fragile name still cannot. A severe
+# crisis (intensity well above this) can close even a liquid name — see the live
+# path — which is exactly why severity, not volatility, must be the gate.
+MODERATE_CRISIS = 0.4
+
 
 @dataclass
 class Episode:
@@ -98,7 +106,12 @@ def _config_for(ep: Episode):
         update={"quantity": qty, "arrival_price": ep.reference_price}
     )
     return base.model_copy(
-        update={"run_id": f"disc-{ep.key}", "instrument": instrument, "position": position}
+        update={
+            "run_id": f"disc-{ep.key}",
+            "instrument": instrument,
+            "position": position,
+            "crisis_intensity": MODERATE_CRISIS,
+        }
     )
 
 
@@ -125,7 +138,7 @@ def render_table(outcomes: list[Outcome]) -> str:
     lines = [
         bar,
         f"  EGRESS · out-of-sample discrimination test   (position = {POSITION_FRAC:.0%} of ADV, "
-        "one fixed config, no tuning)",
+        f"crisis={MODERATE_CRISIS}, one fixed config, no tuning)",
         bar,
         f"  {'Episode':<32}{'group':<10}{'real ADV':>13}{'pos (%ADV)':>13}"
         f"{'fill':>8}{'stuck':>8}{'halts':>7}  verdict",
