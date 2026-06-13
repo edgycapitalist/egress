@@ -6,6 +6,7 @@ import {
   INVESTOR_TYPES,
   INVESTOR_LABELS,
   investorColor,
+  TICKER_PRESETS,
   type InvestorType,
   type Levers,
 } from "@/lib/types";
@@ -82,6 +83,9 @@ export function ScenarioBuilder({
   const { mode, levers } = state;
   const busy = status === "running" || status === "connecting";
   const cached = mode === "cached";
+  // A curated ticker drives the instrument and sizes the position at a fixed %ADV on
+  // the gateway, so the manual position slider doesn't apply while one is selected.
+  const tickerActive = Boolean(levers.symbol);
 
   const mixTotal = useMemo(
     () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
@@ -145,8 +149,38 @@ export function ScenarioBuilder({
           />
         </div>
 
+        {/* Instrument (curated ticker presets; works in cached and live) */}
+        <div className="space-y-2">
+          <Label>Instrument</Label>
+          <select
+            value={levers.symbol ?? ""}
+            onChange={(e) => set({ symbol: e.target.value })}
+            disabled={busy}
+            className={cn(
+              "w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 text-[12.5px] text-ink focus:border-line-strong focus:outline-none",
+              busy && "opacity-55",
+            )}
+          >
+            {TICKER_PRESETS.map((p) => (
+              <option key={p.symbol || "custom"} value={p.symbol}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <Caption>
+            {tickerActive
+              ? "Real reference price, ADV, free float and volatility for this name drive the run, with the position set to 20% of its ADV so deep and thin names compare fairly. Cached replays this name's recording; Live re-runs the engine. Pick a liquid name (AAPL, SPY) vs a crowded one (CVNA, SIVB) to see the exit stay open or close."
+              : "Pick a real ticker to run one fixed configuration against its real liquidity — cached replays that name's recording, live re-runs the engine. Keep the flagship to set the share count by hand below."}
+          </Caption>
+        </div>
+
         {/* Position size */}
-        <div className={cn("space-y-1", cached && "pointer-events-none opacity-55")}>
+        <div
+          className={cn(
+            "space-y-1",
+            (cached || tickerActive) && "pointer-events-none opacity-55",
+          )}
+        >
           <Slider
             label="Position size"
             display={`${fmtInt(levers.position_size)} shares`}
@@ -156,7 +190,11 @@ export function ScenarioBuilder({
             value={levers.position_size}
             onChange={(v) => set({ position_size: v })}
           />
-          <Caption>The number of shares you are trying to sell.</Caption>
+          <Caption>
+            {tickerActive
+              ? "Set automatically to 20% of the selected ticker's ADV. Switch to “Flagship” above to set it by hand."
+              : "The number of shares you are trying to sell."}
+          </Caption>
         </div>
 
         {/* Market participants (population_size) */}

@@ -22,6 +22,7 @@ const DEFAULT_LEVERS: Levers = {
     "A heavily crowded name is hit by a surprise liquidity and bankruptcy scare. " +
     "Forced sellers hit margin calls, panic and trend sellers pile on, and " +
     "bargain-hunter and market-maker support is thin.",
+  symbol: "",
   position_size: 250_000,
   population_size: 5_000,
   exit_speed: "measured",

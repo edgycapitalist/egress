@@ -32,6 +32,12 @@ export function SourcedInputs({
   }
 
   const live = data.source === "alphavantage";
+  const curated = data.source === "curated";
+  const sourceLabel = live
+    ? "Live feed · Alpha Vantage"
+    : curated
+      ? "Curated reference"
+      : "Synthetic fallback";
   return (
     <div className="space-y-3 px-4 pb-4">
       <div className="flex items-center justify-between gap-2">
@@ -39,9 +45,7 @@ export function SourcedInputs({
           {data.symbol}
           {data.name ? <span className="ml-1.5 text-[12px] text-ink-faint">{data.name}</span> : null}
         </span>
-        <Badge tone={live ? "buy" : "neutral"}>
-          {live ? "Live feed · Alpha Vantage" : "Synthetic fallback"}
-        </Badge>
+        <Badge tone={live ? "buy" : curated ? "accent" : "neutral"}>{sourceLabel}</Badge>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         <Field label="Reference price" value={fmtPrice(data.reference_price)} />

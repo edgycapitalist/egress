@@ -101,12 +101,30 @@ export type Frame =
 // Scenario-builder levers (client → gateway).
 export interface Levers {
   scenario_text: string;
+  symbol?: string; // curated ticker preset; "" = flagship CVNA with the manual size
   position_size: number;
   population_size: number;
   exit_speed: string;
   crowding_mix: Record<InvestorType, number>;
   seed?: number;
 }
+
+// Curated tickers for the live-run instrument picker. Selecting one swaps in that
+// name's real ADV/volatility on the gateway and sizes the position at a fixed %ADV,
+// so the liquid-vs-illiquid difference is visible. "" keeps the flagship + manual size.
+export interface TickerPreset {
+  symbol: string;
+  label: string;
+  group: "liquid" | "illiquid" | "custom";
+}
+
+export const TICKER_PRESETS: TickerPreset[] = [
+  { symbol: "", label: "Flagship (CVNA) — manual size", group: "custom" },
+  { symbol: "CVNA", label: "CVNA · Carvana (illiquid)", group: "illiquid" },
+  { symbol: "SIVB", label: "SIVB · SVB Financial (illiquid)", group: "illiquid" },
+  { symbol: "AAPL", label: "AAPL · Apple (liquid)", group: "liquid" },
+  { symbol: "SPY", label: "SPY · S&P 500 ETF (liquid)", group: "liquid" },
+];
 
 // Real sourced inputs for an instrument (from the gateway's /api/instrument).
 export interface SourcedInput {
@@ -117,7 +135,7 @@ export interface SourcedInput {
   free_float: number;
   realized_vol_daily: number | null;
   bars: number;
-  source: "alphavantage" | "synthetic";
+  source: "alphavantage" | "synthetic" | "curated";
 }
 
 export const INVESTOR_LABELS: Record<InvestorType, string> = {
