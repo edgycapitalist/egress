@@ -23,9 +23,10 @@ _ENV_PATH = REPO_ROOT / ".env"
 # file is present. Vertex is the product path; these are not AI Studio settings.
 DEFAULTS: dict[str, str] = {
     "GOOGLE_GENAI_USE_VERTEXAI": "true",
-    "GOOGLE_CLOUD_LOCATION": "us-central1",
-    "GEMINI_MODEL_FAST": "gemini-2.5-flash",
-    "GEMINI_MODEL_STRONG": "gemini-3.1-pro",
+    # Gemini 3.x models are served from the "global" Vertex location, not a region.
+    "GOOGLE_CLOUD_LOCATION": "global",
+    "GEMINI_MODEL_FAST": "gemini-3.1-flash-lite",
+    "GEMINI_MODEL_STRONG": "gemini-3.1-pro-preview",
     "DETERMINISTIC_BASELINE": "true",
     "CACHED_REPLAY": "false",
     "EGRESS_SEED": "42",
@@ -83,13 +84,13 @@ def baseline_mode() -> bool:
 
 
 def fast_model() -> str:
-    """Fast Gemini model for the archetype mood-setters (they run every k ticks)."""
-    return _env("GEMINI_MODEL_FAST") or "gemini-2.5-flash"
+    """Gemini model for the archetype mood-setters (they refresh every k ticks)."""
+    return _env("GEMINI_MODEL_FAST") or "gemini-3.1-flash-lite"
 
 
 def strong_model() -> str:
     """Stronger Gemini model for the analyst and the calibration critic."""
-    return _env("GEMINI_MODEL_STRONG") or "gemini-3.1-pro"
+    return _env("GEMINI_MODEL_STRONG") or "gemini-3.1-pro-preview"
 
 
 def seed() -> int:

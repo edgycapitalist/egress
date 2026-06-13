@@ -104,9 +104,11 @@ def build_scenario_author(*, seed_value: int | None = None) -> LlmAgent:
     """The Scenario Author ``LlmAgent`` (live Vertex path)."""
     from mcp.market_data.tools import MARKET_DATA_TOOLS
 
+    from agents.common.env import fast_model
+
     return LlmAgent(
         name="ScenarioAuthor",
-        model="gemini-2.5-flash",
+        model=fast_model(),
         instruction=INSTRUCTION,
         description="Parses the user's plain-language scenario into a validated RunConfig.",
         tools=[*MARKET_DATA_TOOLS],

@@ -64,6 +64,9 @@ export default function Page() {
         setAvEnabled(Boolean(d.av_enabled));
         setBuilder((b) => ({
           ...b,
+          // Default the live run to real Gemini when the gateway has it configured,
+          // so "Live" uses the AI path unless the user opts out.
+          gemini: b.gemini || Boolean(d.gemini_enabled),
           levers: {
             ...b.levers,
             scenario_text: d.scenario_text ?? b.levers.scenario_text,

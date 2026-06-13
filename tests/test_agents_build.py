@@ -6,6 +6,7 @@ LLM call — the conftest stub keeps imports offline.
 
 import pytest
 from agents.archetypes.agent import build_archetype_agents, build_archetypes_parallel
+from agents.common.env import fast_model
 from agents.common.state import ALL_STANCE_KEYS
 from agents.scenario_author.agent import build_scenario_author
 from agents.scenario_author.validation import ScenarioDraft, build_run_config
@@ -24,7 +25,7 @@ def test_six_archetypes_write_distinct_stance_keys() -> None:
 def test_archetypes_use_fast_model_and_both_mcp_tools() -> None:
     agents = build_archetype_agents()
     for a in agents:
-        assert a.model == "gemini-2.5-flash"
+        assert a.model == fast_model()  # the configured Gemini model (3.1 by default)
         # News (2) + Market Data (3) tools attached.
         assert len(a.tools) == 5
 
