@@ -25,7 +25,7 @@ DEFAULTS: dict[str, str] = {
     "GOOGLE_GENAI_USE_VERTEXAI": "true",
     "GOOGLE_CLOUD_LOCATION": "us-central1",
     "GEMINI_MODEL_FAST": "gemini-2.5-flash",
-    "GEMINI_MODEL_STRONG": "gemini-2.5-pro",
+    "GEMINI_MODEL_STRONG": "gemini-3.1-pro",
     "DETERMINISTIC_BASELINE": "true",
     "CACHED_REPLAY": "false",
     "EGRESS_SEED": "42",
@@ -89,7 +89,7 @@ def fast_model() -> str:
 
 def strong_model() -> str:
     """Stronger Gemini model for the analyst and the calibration critic."""
-    return _env("GEMINI_MODEL_STRONG") or "gemini-2.5-pro"
+    return _env("GEMINI_MODEL_STRONG") or "gemini-3.1-pro"
 
 
 def seed() -> int:
