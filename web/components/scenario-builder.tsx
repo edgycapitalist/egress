@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Play, RotateCcw, Database, Radio } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Play, RotateCcw, Database, Radio, Check, Loader2, AlertCircle } from "lucide-react";
 import {
   INVESTOR_TYPES,
   INVESTOR_LABELS,
@@ -13,7 +13,16 @@ import {
 import type { RunStatus } from "@/lib/useRun";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { cn, fmtInt, fmtPct } from "@/lib/utils";
+import { cn, fmtInt, fmtPct, fmtPrice } from "@/lib/utils";
+
+const HTTP_BASE = process.env.NEXT_PUBLIC_GATEWAY_HTTP ?? "http://127.0.0.1:8000";
+
+// Result of checking a typed ticker against the live data feed.
+type TickerCheck =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "found"; name: string | null; price: number }
+  | { status: "notfound" };
 
 const EXIT_SPEEDS: { key: string; label: string }[] = [
   { key: "patient", label: "Patient" },
@@ -102,6 +111,40 @@ export function ScenarioBuilder({
   const cachedShares =
     TICKER_PRESETS.find((p) => p.symbol === symbol)?.recordedShares ??
     TICKER_PRESETS.find((p) => p.symbol === "CVNA")!.recordedShares;
+
+  // Dynamically check whether a typed ticker resolves to real live data. Only meaningful
+  // in live mode with a data key configured; debounced and cached per symbol to spare the
+  // feed's small daily budget. (Cached mode validates via the saved-recording check.)
+  const [tickerCheck, setTickerCheck] = useState<TickerCheck>({ status: "idle" });
+  const checkCache = useRef<Map<string, TickerCheck>>(new Map());
+  const validatable = !cached && avEnabled && /^[A-Z.]{1,6}$/.test(symbol);
+
+  useEffect(() => {
+    if (!validatable) {
+      setTickerCheck({ status: "idle" });
+      return;
+    }
+    const hit = checkCache.current.get(symbol);
+    if (hit) {
+      setTickerCheck(hit);
+      return;
+    }
+    setTickerCheck({ status: "checking" });
+    const id = setTimeout(() => {
+      fetch(`${HTTP_BASE}/api/instrument?symbol=${encodeURIComponent(symbol)}&live=1`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const res: TickerCheck =
+            d && (d.source === "alphavantage" || d.source === "curated")
+              ? { status: "found", name: d.name ?? null, price: d.reference_price }
+              : { status: "notfound" };
+          checkCache.current.set(symbol, res);
+          setTickerCheck(res);
+        })
+        .catch(() => setTickerCheck({ status: "idle" }));
+    }, 600);
+    return () => clearTimeout(id);
+  }, [symbol, validatable]);
 
   const mixTotal = useMemo(
     () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
@@ -220,6 +263,31 @@ export function ScenarioBuilder({
               {QUICK_PICKS.map((p) => p.symbol).join(", ")}. Switch to Live to run {symbol} on
               current data.
             </p>
+          ) : null}
+          {validatable ? (
+            <div className="flex items-start gap-1.5 text-[11px] leading-relaxed">
+              {tickerCheck.status === "checking" ? (
+                <>
+                  <Loader2 className="mt-0.5 h-3 w-3 shrink-0 animate-spin text-ink-faint" />
+                  <span className="text-ink-faint">Checking {symbol}…</span>
+                </>
+              ) : tickerCheck.status === "found" ? (
+                <>
+                  <Check className="mt-0.5 h-3 w-3 shrink-0 text-buy" />
+                  <span className="text-buy">
+                    {tickerCheck.name ?? symbol} found at {fmtPrice(tickerCheck.price)}.
+                  </span>
+                </>
+              ) : tickerCheck.status === "notfound" ? (
+                <>
+                  <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-[var(--color-halt)]" />
+                  <span className="text-[var(--color-halt)]">
+                    No live data for {symbol}. It may be an unrecognised ticker, or the daily data
+                    limit was reached. It will run on stand-in numbers.
+                  </span>
+                </>
+              ) : null}
+            </div>
           ) : null}
         </div>
 
