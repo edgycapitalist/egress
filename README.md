@@ -8,7 +8,9 @@ Egress simulates how an investment position would behave in a crisis sell-off, b
 
 **<https://egress-frontend-978090004115.us-central1.run.app>**
 
-Cached mode plays the real CVNA cascade instantly; the "Use real Gemini (Vertex AI)" option runs the live multi-agent pipeline (~60–90s).
+Cached mode replays a **recorded** CVNA cascade instantly — no keys, no cloud. A live run re-runs the deterministic engine; ticking *Use real Gemini (Vertex AI)* has the six archetype agents set by Gemini instead (about a minute or two).
+
+> The hosted URL runs the deployed build. The instrument picker and the live Alpha Vantage path described below are on the `dev` branch and run locally.
 
 ## Demo video
 
@@ -20,7 +22,7 @@ Watch the walkthrough: <https://youtu.be/8xlknY_OmvI>
 
 Firms routinely measure how much they could lose on a position, but not whether they could actually *sell* it in a crisis. Many firms unknowingly hold the same crowded trades, and when a shock hits and they all sell at once there are not enough buyers, the price collapses, and they cannot get out without heavy losses. There is no easy way today to test how a position behaves in that moment before committing.
 
-Egress lets you test it. You describe a position and a stress event in plain language. The system simulates the sell-off as a market of thousands of independent trading agents that each act on their own and react to each other. Their orders meet in an order book that sets the prices, so the price moves come out of the agents' collective behaviour rather than being assumed. You see whether the position can actually be sold, how far the price moves while selling, and how much stays stuck, and you can vary how much is held and how fast it is sold to find the point where the exit closes.
+Egress lets you test it. You describe a position and a stress event in plain language. The system simulates the sell-off as a market of thousands of independent trading agents that each act on their own and react to each other. Their orders meet in a real limit order book that sets the prices, so the price moves while selling come out of the agents' collective behaviour rather than from an assumed price-impact curve (the scenario's exogenous shocks aside). You see whether the position can actually be sold, how far the price moves while selling, and how much stays stuck, and you can vary how much is held and how fast it is sold to find the point where the exit closes.
 
 ## Three-tier architecture
 
@@ -28,9 +30,9 @@ The defining design choice is that the language model is one part of the system,
 
 1. **Gemini archetype agents set the stances.** Six Gemini `LlmAgent`s (via Vertex AI), one per investor type, run as an ADK `ParallelAgent`. Each reads the scenario and writes only its own `*_stance` key into session state, setting the behavioural mood for its investor type. These refresh once per window, never inside the per-tick loop.
 2. **A deterministic NumPy population acts on those stances.** Thousands of lightweight agents live as rows in NumPy arrays, parameterised by their type's current stance. Staggered per-agent thresholds decide who sells and when, which is what produces a cascade rather than a single synchronised dump.
-3. **An order-book engine matches the orders.** A deterministic matching engine clears the buy and sell orders tick by tick. Prices, fill rate, slippage, stuck percentage, and halts all emerge from the matching, and the run is recorded to an NDJSON replay stream.
+3. **An order-book engine matches the orders.** A real price-time-priority limit order book (`engine/orderbook/book.py`) matches each tick: a sell sweeps the highest resting bids first and fills at the bid price until the order is exhausted. Fill rate, slippage, stuck percentage and drawdown are computed from the **actual matched quantities and traded prices** — not a price-impact formula — and a single-stock volatility halt is a fixed band rule. Each run is recorded to an NDJSON replay stream. Two honest caveats: liquidity is **re-posted every tick** (resting orders do not persist across ticks — each tick is a fresh auction against newly-posted orders), and the price is the last traded level **plus an exogenous shock gap** the scenario applies at scheduled ticks.
 
-Because the mechanics are deterministic code, removing every Gemini call still produces a full simulation. That is the baseline mode the test suite and the offline demo run on. The live Vertex path is the product; baseline is the swappable offline and test mode.
+**What the model does — and doesn't.** In a live Gemini run, each archetype agent sets three scalars for its investor type — aggressiveness, sell-threshold, participation — which are clamped to the contract's `Stance` ranges before the engine reads them. The model tunes the crowd's *mood*; it does not add any market mechanic the deterministic baseline lacks. The analyst and the calibration critic produce the plain-language narrative and the fidelity verdict — judgement and explanation, not the numbers. In the app, a plain **Live** run uses the deterministic stances; only with *Use real Gemini* checked do the LLM stances drive the run. Remove every Gemini call and the engine still produces a full simulation — the baseline mode the test suite and offline demos run on.
 
 ### System architecture
 
@@ -95,11 +97,11 @@ make web-install   # first time only
 make web
 ```
 
-Open <http://localhost:3000>. The frontend defaults to the gateway at `ws://127.0.0.1:8000/ws/run` (override with `NEXT_PUBLIC_GATEWAY_WS`; see [`web/.env.example`](./web/.env.example)). The UI boots in **cached** mode and replays the committed flagship cascade, so it works with no cloud and no keys. The scenario levers (position size, exit speed, crowding mix) re-run against that replay.
+Open <http://localhost:3000>. The frontend defaults to the gateway at `ws://127.0.0.1:8000/ws/run` (override with `NEXT_PUBLIC_GATEWAY_WS`; see [`web/.env.example`](./web/.env.example)). The UI boots in **cached** mode, which **replays a committed recording** of the selected instrument (the flagship CVNA cascade by default) — fully offline and identical every time. Cached ignores the other levers because it is a recording; switch to **Live** to re-run the engine, where the position size, exit speed, crowding mix, and the chosen instrument actually drive a fresh simulation.
 
 ### 3. Real data and live Gemini (optional)
 
-**Real market data.** Get a free Alpha Vantage key at <https://www.alphavantage.co/support/#api-key> and set `ALPHAVANTAGE_API_KEY` in `.env`. The MCP servers then pull real CVNA prices and news, caching responses in Postgres (`make start` brings up Postgres and Redis locally). Without a key, the servers use the deterministic synthetic fallback automatically.
+**Real market data.** Get a free Alpha Vantage key at <https://www.alphavantage.co/support/#api-key> and set `ALPHAVANTAGE_API_KEY` in `.env`. A **live** run then resolves the chosen instrument's recent daily data, caching responses in Postgres (`make start` brings up Postgres and Redis locally). The free tier serves ~100 trading days of daily bars, so a live run uses the name's **current** conditions, not a historical crisis window (see [Data sources](#data-sources)). Without a key, the servers fall back to a deterministic synthetic feed automatically.
 
 **Live Gemini through Vertex AI.**
 
@@ -118,7 +120,7 @@ To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_
 | --- | --- |
 | Simulation engine | Python 3.13, NumPy, Pydantic. No LLM, no cloud. |
 | Agent orchestration | Google ADK (`SequentialAgent`, `ParallelAgent`, `LoopAgent`), Gemini via Vertex AI. |
-| External data | Two MCP servers (market data, news) over the Model Context Protocol. |
+| External data | Two MCP servers over the Model Context Protocol — Alpha Vantage **daily bars** (market data) and **news headlines**. Daily only; no intraday or order-book/Level 2 feed. |
 | Gateway / BFF | FastAPI, WebSocket streaming of tick telemetry. |
 | Frontend | Next.js 15, React 19, shadcn/ui, Tailwind CSS. |
 | Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is provisioned for a planned tick-state layer and is not yet used in code. |
@@ -127,9 +129,18 @@ See [`AGENTS.md`](./AGENTS.md) for the full build specification and [`docs/contr
 
 ## Data sources
 
-Real market data comes from **Alpha Vantage**. The market-data MCP server pulls daily OHLCV and reference data for the flagship ticker, **CVNA (Carvana)**, when `ALPHAVANTAGE_API_KEY` is set in the environment, with built-in per-run and per-day call budgets so a run never exhausts the free tier.
+The market-data MCP server calls one Alpha Vantage endpoint — `TIME_SERIES_DAILY` with `outputsize=compact` — when `ALPHAVANTAGE_API_KEY` is set. From those daily bars it derives three real numbers: the **reference price**, the **average daily volume** (mean of recent volume), and the **daily realized volatility** (standard deviation of daily returns). Real calls are budgeted for the free tier — at most a few per run and `25`/day by default, throttled, with an immediate synthetic fallback when a limit is hit — so a run never exhausts the quota.
 
-When no API key is present, or when a call is rate-limited or errors, the server falls back automatically to a **deterministic synthetic feed**: a NumPy random walk seeded by the symbol, so the whole system runs offline and reproducibly with no credentials. The news MCP server works the same way, synthesising a deterministic crisis tape when no live source is configured. This is why `make test`, `make demo`, and `make demo-agents` all run with no network access.
+What is **not** real data, stated plainly:
+
+- **Free float is a proxy, not a feed.** It is not on the free tier, so the server estimates it as `adv × 30` (`mcp/market_data/data.py`). Treat it as a rough scale, not a real figure.
+- **The crowd composition and the position size are user-set.** The crowding mix and position size come from the UI sliders / scenario, not from any ownership, 13F, short-interest, or positioning data — there is no such data source in the system.
+- **There is no order-book / Level 2 feed.** The book's depth is built from the simulated agent population: each agent's quote size (`size_base`) and holdings scale with the instrument's real ADV (`liq_unit = adv / population_size`) and are capped by free float (`engine/population/population.py`). Real ADV sets the *scale* of depth; the depth itself is synthesized, not observed.
+- **Free-tier history is ~100 days.** `outputsize=full` is premium, so historical crisis windows (CVNA late-2022, SVB March-2023) cannot be fetched. **Cached** mode therefore replays committed recordings of those episodes (a historical *reference*), while a **live** run uses the instrument's current ~100-day data and does **not** reproduce the historical crisis.
+
+The news MCP server calls `NEWS_SENTIMENT` for real headlines, used only by the live Gemini archetypes; it falls back to a deterministic synthetic crisis tape otherwise.
+
+When no key is present (or a call is rate-limited or errors), every feed falls back to a **deterministic synthetic** version — a NumPy random walk seeded by the symbol — so `make test`, `make demo`, and `make demo-agents` run fully offline and reproducibly with no credentials.
 
 ## License
 
