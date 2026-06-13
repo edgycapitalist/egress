@@ -128,12 +128,6 @@ export const TICKER_PRESETS: TickerPreset[] = [
   { symbol: "SPY", name: "S&P 500 ETF", era: "drawdown", group: "liquid" },
 ];
 
-// Honest, mode-aware label: cached = recorded historical reference, live = current data.
-export function tickerLabel(p: TickerPreset, cached: boolean): string {
-  if (!p.symbol) return cached ? "Flagship (CVNA) — recorded demo" : "Flagship (CVNA) — manual size";
-  return cached ? `${p.symbol} — ${p.era} reference` : `${p.symbol} — live (current data)`;
-}
-
 // Real sourced inputs for an instrument (from the gateway's /api/instrument).
 export interface SourcedInput {
   symbol: string;

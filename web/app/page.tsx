@@ -50,6 +50,7 @@ export default function Page() {
     levers: DEFAULT_LEVERS,
   });
   const [geminiEnabled, setGeminiEnabled] = useState(false);
+  const [avEnabled, setAvEnabled] = useState(false);
   const [sourced, setSourced] = useState<SourcedInput | null>(null);
   const [sourcedLoading, setSourcedLoading] = useState(false);
 
@@ -60,6 +61,7 @@ export default function Page() {
       .then((d) => {
         if (!d) return;
         setGeminiEnabled(Boolean(d.gemini_enabled));
+        setAvEnabled(Boolean(d.av_enabled));
         setBuilder((b) => ({
           ...b,
           levers: {
@@ -135,8 +137,9 @@ export default function Page() {
         </p>
         <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
           <Info className="h-3 w-3 shrink-0" />
-          The market mechanics are deterministic code; a few Gemini agents (via Vertex AI) set each
-          investor type&apos;s mood and explain the run.
+          The market mechanics are deterministic code; in a live Gemini run a few agents (via
+          Vertex AI) set each investor type&apos;s mood and explain the run — cached and baseline
+          runs use deterministic stand-ins.
         </p>
       </div>
 
@@ -152,6 +155,7 @@ export default function Page() {
             onReset={reset}
             status={state.status}
             geminiEnabled={geminiEnabled}
+            avEnabled={avEnabled}
           />
         </Card>
 

@@ -7,7 +7,6 @@ import {
   INVESTOR_LABELS,
   investorColor,
   TICKER_PRESETS,
-  tickerLabel,
   type InvestorType,
   type Levers,
 } from "@/lib/types";
@@ -22,6 +21,10 @@ const EXIT_SPEEDS: { key: string; label: string }[] = [
   { key: "urgent", label: "Urgent" },
   { key: "fire_sale", label: "Fire sale" },
 ];
+
+// Curated tickers that have a committed cached recording. Any other symbol is live-only.
+const PRESET_SYMBOLS = new Set(TICKER_PRESETS.filter((p) => p.symbol).map((p) => p.symbol));
+const QUICK_PICKS = TICKER_PRESETS.filter((p) => p.symbol);
 
 function Segmented<T extends string>({
   options,
@@ -73,6 +76,7 @@ export function ScenarioBuilder({
   onReset,
   status,
   geminiEnabled,
+  avEnabled,
 }: {
   state: BuilderState;
   setState: (s: BuilderState) => void;
@@ -80,13 +84,19 @@ export function ScenarioBuilder({
   onReset: () => void;
   status: RunStatus;
   geminiEnabled: boolean;
+  avEnabled: boolean;
 }) {
   const { mode, levers } = state;
   const busy = status === "running" || status === "connecting";
   const cached = mode === "cached";
-  // A curated ticker drives the instrument and sizes the position at a fixed %ADV on
-  // the gateway, so the manual position slider doesn't apply while one is selected.
-  const tickerActive = Boolean(levers.symbol);
+  // A chosen ticker drives the instrument and sizes the position at a fixed %ADV on
+  // the gateway, so the manual position slider doesn't apply while one is set.
+  const symbol = (levers.symbol ?? "").trim().toUpperCase();
+  const tickerActive = Boolean(symbol);
+  // Cached mode only has recordings for the curated presets; any other ticker has no
+  // recording and only runs on the live path.
+  const isPreset = PRESET_SYMBOLS.has(symbol);
+  const cachedNoRecording = cached && tickerActive && !isPreset;
 
   const mixTotal = useMemo(
     () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
@@ -150,29 +160,55 @@ export function ScenarioBuilder({
           />
         </div>
 
-        {/* Instrument (curated ticker presets; works in cached and live) */}
+        {/* Instrument — type any ticker, or quick-pick a curated name. */}
         <div className="space-y-2">
           <Label>Instrument</Label>
-          <select
-            value={levers.symbol ?? ""}
-            onChange={(e) => set({ symbol: e.target.value })}
+          <input
+            type="text"
+            value={symbol}
+            onChange={(e) => set({ symbol: e.target.value.toUpperCase().replace(/[^A-Z.]/g, "") })}
+            placeholder="Ticker, e.g. AAPL — blank = flagship (CVNA)"
             disabled={busy}
+            spellCheck={false}
             className={cn(
-              "w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 text-[12.5px] text-ink focus:border-line-strong focus:outline-none",
+              "w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 text-[12.5px] uppercase tracking-wide text-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint focus:border-line-strong focus:outline-none",
               busy && "opacity-55",
             )}
-          >
-            {TICKER_PRESETS.map((p) => (
-              <option key={p.symbol || "custom"} value={p.symbol}>
-                {tickerLabel(p, cached)}
-              </option>
+          />
+          <div className="flex flex-wrap gap-1">
+            {QUICK_PICKS.map((p) => (
+              <button
+                key={p.symbol}
+                disabled={busy}
+                onClick={() => set({ symbol: p.symbol })}
+                className={cn(
+                  "rounded-[6px] border px-2 py-1 text-[11px] transition-colors",
+                  symbol === p.symbol
+                    ? "border-line-strong bg-ink text-bg"
+                    : "border-line bg-surface-2/60 text-ink-muted hover:text-ink",
+                )}
+              >
+                {p.symbol}
+              </button>
             ))}
-          </select>
-          <Caption>
-            {cached
-              ? "Cached replays this name's recorded historical-reference episode (CVNA late-2022, SVB Mar-2023) — fixed prices, identical every time. The position is sized at 20% of ADV so deep and thin names compare fairly."
-              : "Live fetches this name's current real data (price, ADV, free float, volatility) and runs the engine on it, position sized at 20% of ADV. This is today's conditions, not the historical crisis — a name that has since recovered will behave differently."}
-          </Caption>
+            <button
+              disabled={busy || !tickerActive}
+              onClick={() => set({ symbol: "" })}
+              className={cn(
+                "rounded-[6px] border border-line px-2 py-1 text-[11px] text-ink-muted transition-colors hover:text-ink",
+                !tickerActive && "opacity-40",
+              )}
+            >
+              Flagship
+            </button>
+          </div>
+          <Caption>{instrumentCaption({ cached, symbol, isPreset, avEnabled })}</Caption>
+          {cachedNoRecording ? (
+            <p className="text-[11px] leading-relaxed text-[var(--color-halt)]">
+              No cached recording for {symbol}. Cached only has the curated names
+              ({QUICK_PICKS.map((p) => p.symbol).join(", ")}); switch to Live to run {symbol}.
+            </p>
+          ) : null}
         </div>
 
         {/* Position size */}
@@ -284,6 +320,32 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
 
 function Caption({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] leading-relaxed text-ink-faint">{children}</p>;
+}
+
+// Honest, mode/symbol/AV-aware description of what running this instrument will do.
+function instrumentCaption({
+  cached,
+  symbol,
+  isPreset,
+  avEnabled,
+}: {
+  cached: boolean;
+  symbol: string;
+  isPreset: boolean;
+  avEnabled: boolean;
+}): string {
+  if (cached) {
+    if (!symbol)
+      return "Cached replays the recorded CVNA flagship cascade — fixed, offline, identical every time.";
+    if (isPreset)
+      return `Cached replays the recorded historical-reference episode for ${symbol} (fixed prices). Position sized at 20% of ADV so deep and thin names compare fairly.`;
+    return `Cached has no recording for ${symbol} — switch to Live to run it on current data.`;
+  }
+  if (!symbol)
+    return "Live runs the engine on the CVNA flagship (curated reference) with your manual position size below.";
+  return avEnabled
+    ? `Live fetches ${symbol}'s current real data (price, ADV, volatility) from Alpha Vantage and runs the engine on it — today's conditions, not the historical crisis. Position sized at 20% of ADV.`
+    : `Live runs ${symbol} on a curated/synthetic reference — no Alpha Vantage key is configured, so this is not real current data. Position sized at 20% of ADV.`;
 }
 
 function Divider() {
