@@ -17,10 +17,10 @@ import re
 import uuid
 from typing import Any
 
-from engine.presets import DEFAULT_POSITION_FRAC
 from engine.scenarios import flagship_scenario
 from engine.schema import INVESTOR_TYPES, RunConfig
 
+from gateway.crisis import derive_crisis_intensity
 from gateway.instruments import resolve_instrument
 
 # Exit-speed presets the UI exposes as labelled choices map to a participation rate.
@@ -49,16 +49,21 @@ def _short_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def build_run_config(levers: dict[str, Any] | None, *, live_data: bool = False) -> RunConfig:
+def build_run_config(
+    levers: dict[str, Any] | None,
+    *,
+    live_data: bool = False,
+    crisis_intensity: float | None = None,
+) -> RunConfig:
     """Build a validated ``RunConfig`` from the UI levers, based on the flagship.
 
     Recognised levers (all optional; anything missing keeps the flagship default):
 
-    * ``symbol``          str   — a ticker; its instrument data is resolved (real Alpha
-                                  Vantage when ``live_data`` is set, else the curated/
-                                  synthetic fallback) and the position is sized at a
-                                  fixed %ADV so liquidity, not the raw share count, decides
-    * ``position_size``   int   — shares to exit (ignored when ``symbol`` resolves)
+    * ``symbol``          str   — a ticker; its real instrument data (price, ADV, free
+                                  float, volatility) is resolved (real Alpha Vantage when
+                                  ``live_data`` is set, else the curated/synthetic fallback)
+    * ``position_size``   int   — shares to exit; the user's own free, editable position,
+                                  independent of the instrument's ADV
     * ``population_size`` int   — number of trading agents (market participants / depth)
     * ``exit_speed``      str   — one of EXIT_SPEED_PRESETS, or…
     * ``participation_rate`` float — an explicit rate, overriding the preset
@@ -67,15 +72,17 @@ def build_run_config(levers: dict[str, Any] | None, *, live_data: bool = False) 
 
     ``live_data`` enables the real Alpha Vantage feed for the instrument. It defaults
     off so offline runs (tests, cached recordings, the discrimination harness) stay
-    deterministic on the curated/synthetic reference.
+    deterministic on the curated/synthetic reference. ``crisis_intensity``, when given,
+    sets the engine's crisis magnitude (derived from the stress text + news on the live
+    path); ``None`` keeps the engine's neutral default.
     """
     levers = levers or {}
     base = flagship_scenario(seed=int(levers.get("seed", 42)))
     data = base.model_dump()
 
     # Resolve the instrument: real data drives the run when available, otherwise the
-    # curated/synthetic fallback. Only the instrument + position change — the crowd
-    # mix, shocks, and halt rule stay the flagship's, so the comparison is honest.
+    # curated/synthetic fallback. Only the instrument changes — the crowd mix, shocks,
+    # and halt rule stay the flagship's, so the comparison is honest.
     inst = resolve_instrument(levers.get("symbol"), live=live_data)
     if inst is not None:
         data["instrument"].update(
@@ -88,11 +95,14 @@ def build_run_config(levers: dict[str, Any] | None, *, live_data: bool = False) 
             }
         )
         data["position"]["arrival_price"] = inst["reference_price"]
-        # Size the exit at a fixed fraction of ADV so a name's liquidity, not the raw
-        # share count, decides the outcome — comparable across deep and thin names.
-        data["position"]["quantity"] = max(1, round(DEFAULT_POSITION_FRAC * inst["adv"]))
-    elif levers.get("position_size"):
+
+    # Position size is the user's own free, editable share count — the real position
+    # being stress-tested — never auto-sized to the name's ADV.
+    if levers.get("position_size"):
         data["position"]["quantity"] = int(levers["position_size"])
+
+    if crisis_intensity is not None:
+        data["crisis_intensity"] = float(crisis_intensity)
 
     if levers.get("population_size"):
         data["population_size"] = max(1, int(levers["population_size"]))
@@ -119,12 +129,14 @@ def build_run_config(levers: dict[str, Any] | None, *, live_data: bool = False) 
 def scenario_prompt(levers: dict[str, Any] | None) -> str:
     """Compose the plain-language prompt the live Gemini Scenario Author parses.
 
-    Starts from the user's own text and appends the structured levers so the live
-    parse and the deterministic fallback describe the same run.
+    Starts from the user's own text, grounds it with the structured levers, and adds a
+    news-derived crisis read so the model schedules shocks that match the real headlines
+    and the described severity. ``live_data=True`` so a typed, non-preset ticker resolves
+    to its real symbol/data and the prompt names the right instrument (not the flagship).
     """
     levers = levers or {}
     text = str(levers.get("scenario_text") or "").strip()
-    cfg = build_run_config(levers)
+    cfg = build_run_config(levers, live_data=True)
     pos = cfg.position.quantity
     rate = cfg.exit_speed.participation_rate or 0.0
     sym = cfg.instrument.symbol
@@ -136,7 +148,16 @@ def scenario_prompt(levers: dict[str, Any] | None) -> str:
         )
         + "."
     )
-    if not text:
-        return spec
-    # Keep the user's narrative first; ground it with the explicit numbers.
-    return re.sub(r"\s+", " ", f"{text}\n\n{spec}").strip()
+    # A deterministic crisis read from the description + real news, to anchor the model's
+    # shock severities (it may still exercise judgement above/below this).
+    intensity, detail = derive_crisis_intensity(text, sym, fetch_news=True)
+    news = detail["news"]
+    crisis = (
+        f"Assessed crisis intensity {intensity:.2f} on a 0.3 (mild) to 1.6 (catastrophic) "
+        f"scale, from the description and {sym} news (overall sentiment "
+        f"{news.get('overall_sentiment')}, {news.get('headline_count')} headlines, "
+        f"source {news.get('source')}). Schedule shocks whose severity and number match "
+        f"this intensity; a high intensity means severe, repeated shocks and thin support."
+    )
+    body = "\n\n".join(p for p in (text, spec, crisis) if p)
+    return re.sub(r"[ \t]+", " ", body).strip()

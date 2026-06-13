@@ -43,16 +43,18 @@ REPLAY_DIR = FLAGSHIP_REPLAY.parent
 
 
 def _cached_replay_for(symbol: str | None) -> Path:
-    """The cached recording for a chosen ticker, falling back to the flagship.
+    """The cached recording for a chosen ticker, defaulting to the CVNA example.
 
-    An empty/unknown symbol (or a name with no committed recording) keeps the CVNA
-    flagship demo, so cached mode is always safe and offline.
+    An empty/unknown symbol (or a name with no committed recording) plays the curated
+    CVNA recording, so cached mode is always safe and offline. (The older flagship
+    recording remains only as a last-resort fallback if the CVNA file is missing.)
     """
     if symbol:
         candidate = REPLAY_DIR / f"{str(symbol).strip().lower()}.ndjson"
         if candidate.exists():
             return candidate
-    return FLAGSHIP_REPLAY
+    default = REPLAY_DIR / "cvna.ndjson"
+    return default if default.exists() else FLAGSHIP_REPLAY
 
 # Demo pacing: ms of dwell between successive tick batches so the cascade animates.
 DEFAULT_PACE_MS = int(os.getenv("EGRESS_PACE_MS", "110"))
@@ -156,8 +158,17 @@ async def _run_live(levers: dict[str, Any], use_gemini: bool) -> tuple[str, str,
         result = await run_live_simulation(scenario_prompt(levers))
         source = "live-gemini"
     else:
-        # A live run pulls the instrument's real Alpha Vantage data when available.
-        config = build_run_config(levers, live_data=True)
+        # A live run pulls the instrument's real Alpha Vantage data and derives the
+        # crisis magnitude from the typed stress text + the instrument's real news
+        # (synthetic fallback when no key), so the description genuinely drives the
+        # outcome even on the no-LLM path. Budget-guarded; cached per symbol+period.
+        from gateway.crisis import derive_crisis_intensity
+
+        text = str(levers.get("scenario_text") or "")
+        intensity, _detail = derive_crisis_intensity(
+            text, levers.get("symbol"), fetch_news=True
+        )
+        config = build_run_config(levers, live_data=True, crisis_intensity=intensity)
         result = await run_baseline_simulation(config)
         source = "live-baseline"
 
