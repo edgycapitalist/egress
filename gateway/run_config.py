@@ -17,9 +17,11 @@ import re
 import uuid
 from typing import Any
 
-from engine.presets import DEFAULT_POSITION_FRAC, get_preset
+from engine.presets import DEFAULT_POSITION_FRAC
 from engine.scenarios import flagship_scenario
 from engine.schema import INVESTOR_TYPES, RunConfig
+
+from gateway.instruments import resolve_instrument
 
 # Exit-speed presets the UI exposes as labelled choices map to a participation rate.
 EXIT_SPEED_PRESETS: dict[str, float] = {
@@ -47,43 +49,48 @@ def _short_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def build_run_config(levers: dict[str, Any] | None) -> RunConfig:
+def build_run_config(levers: dict[str, Any] | None, *, live_data: bool = False) -> RunConfig:
     """Build a validated ``RunConfig`` from the UI levers, based on the flagship.
 
     Recognised levers (all optional; anything missing keeps the flagship default):
 
-    * ``symbol``          str   — a curated ticker preset (CVNA/SIVB/AAPL/SPY); swaps in
-                                  that name's real ADV / free float / volatility and sizes
-                                  the position at a fixed %ADV for a fair comparison
-    * ``position_size``   int   — shares to exit (ignored when ``symbol`` is set)
+    * ``symbol``          str   — a ticker; its instrument data is resolved (real Alpha
+                                  Vantage when ``live_data`` is set, else the curated/
+                                  synthetic fallback) and the position is sized at a
+                                  fixed %ADV so liquidity, not the raw share count, decides
+    * ``position_size``   int   — shares to exit (ignored when ``symbol`` resolves)
     * ``population_size`` int   — number of trading agents (market participants / depth)
     * ``exit_speed``      str   — one of EXIT_SPEED_PRESETS, or…
     * ``participation_rate`` float — an explicit rate, overriding the preset
     * ``crowding_mix``    dict  — {investor_type: fraction}, renormalised to sum 1
     * ``seed``            int   — reproducibility seed
+
+    ``live_data`` enables the real Alpha Vantage feed for the instrument. It defaults
+    off so offline runs (tests, cached recordings, the discrimination harness) stay
+    deterministic on the curated/synthetic reference.
     """
     levers = levers or {}
     base = flagship_scenario(seed=int(levers.get("seed", 42)))
     data = base.model_dump()
 
-    # A curated ticker swaps in real instrument data so one fixed configuration runs
-    # against genuinely different liquidity. Only the instrument changes — the crowd
+    # Resolve the instrument: real data drives the run when available, otherwise the
+    # curated/synthetic fallback. Only the instrument + position change — the crowd
     # mix, shocks, and halt rule stay the flagship's, so the comparison is honest.
-    preset = get_preset(levers.get("symbol"))
-    if preset is not None:
+    inst = resolve_instrument(levers.get("symbol"), live=live_data)
+    if inst is not None:
         data["instrument"].update(
             {
-                "symbol": preset.symbol,
-                "reference_price": preset.reference_price,
-                "adv": preset.adv,
-                "free_float": preset.free_float,
-                "volatility": preset.volatility,
+                "symbol": inst["symbol"],
+                "reference_price": inst["reference_price"],
+                "adv": inst["adv"],
+                "free_float": inst["free_float"],
+                "volatility": inst["volatility"],
             }
         )
-        data["position"]["arrival_price"] = preset.reference_price
+        data["position"]["arrival_price"] = inst["reference_price"]
         # Size the exit at a fixed fraction of ADV so a name's liquidity, not the raw
         # share count, decides the outcome — comparable across deep and thin names.
-        data["position"]["quantity"] = max(1, round(DEFAULT_POSITION_FRAC * preset.adv))
+        data["position"]["quantity"] = max(1, round(DEFAULT_POSITION_FRAC * inst["adv"]))
     elif levers.get("position_size"):
         data["position"]["quantity"] = int(levers["position_size"])
 

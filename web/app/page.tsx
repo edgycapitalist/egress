@@ -74,20 +74,23 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // Fetch the real sourced inputs for whatever instrument the run resolved to.
+  // Fetch the sourced inputs for the instrument the run resolved to, matching the
+  // run's mode: a live run gets the real Alpha Vantage feed, cached gets the
+  // recorded/curated reference — so the panel always agrees with the simulation.
   const symbol = state.config?.instrument.symbol;
+  const live = state.source !== null && state.source !== "cached";
   useEffect(() => {
     if (!symbol) {
       setSourced(null);
       return;
     }
     setSourcedLoading(true);
-    fetch(`${HTTP_BASE}/api/instrument?symbol=${encodeURIComponent(symbol)}`)
+    fetch(`${HTTP_BASE}/api/instrument?symbol=${encodeURIComponent(symbol)}&live=${live ? 1 : 0}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setSourced(d))
       .catch(() => setSourced(null))
       .finally(() => setSourcedLoading(false));
-  }, [symbol]);
+  }, [symbol, live]);
 
   const run = () =>
     start({ mode: builder.mode, gemini: builder.gemini, levers: builder.levers });

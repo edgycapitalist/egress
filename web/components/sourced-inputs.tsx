@@ -56,6 +56,13 @@ export function SourcedInputs({
         />
         <Field label="Free float" value={`${fmtInt(data.free_float)} shares`} />
       </div>
+      <p className="text-[10.5px] text-ink-faint">
+        {data.window?.start && data.window?.end
+          ? `Data window: ${data.window.start} → ${data.window.end} (${data.bars} sessions)`
+          : curated
+            ? "Representative reference for the episode window — not a live quote."
+            : "Synthetic fallback — no live feed configured."}
+      </p>
     </div>
   );
 }

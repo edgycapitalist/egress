@@ -12,6 +12,12 @@ import uvicorn
 
 
 def main() -> None:
+    # Load .env so a live run can reach Alpha Vantage / Vertex when configured. Done
+    # here (the server entry point), not at module import, so importing the app for
+    # tests never picks up credentials or makes a live call.
+    from agents.common.env import load_dotenv
+
+    load_dotenv()
     uvicorn.run(
         "gateway.app:app",
         host=os.getenv("EGRESS_HOST", "127.0.0.1"),

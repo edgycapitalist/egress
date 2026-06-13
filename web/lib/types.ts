@@ -134,6 +134,7 @@ export interface SourcedInput {
   adv: number;
   free_float: number;
   realized_vol_daily: number | null;
+  window: { start: string | null; end: string | null } | null;
   bars: number;
   source: "alphavantage" | "synthetic" | "curated";
 }

@@ -100,49 +100,30 @@ async def scenario_defaults() -> dict[str, Any]:
 
 
 @app.get("/api/instrument")
-def instrument_reference(symbol: str, period: str = "recent") -> dict[str, Any]:
-    """Real sourced inputs for an instrument, via the Market Data MCP.
+def instrument_reference(symbol: str, live: bool = False, period: str = "recent") -> dict[str, Any]:
+    """Sourced inputs for an instrument — the same values its run uses.
 
-    Read-only BFF passthrough: returns the instrument's reference price, ADV, free
-    float, and recent realized volatility, plus a ``source`` field that says whether
-    the numbers came from the live Alpha Vantage feed or the synthetic fallback —
-    so the UI can label them honestly. A sync def so the (possibly blocking) MCP
+    Resolves the instrument exactly as a run does (``gateway.instruments``): the real
+    Alpha Vantage feed when ``live`` is set and a key is configured, otherwise the
+    curated/synthetic fallback. Returns the reference price, ADV, free float, recent
+    realized volatility, the real date ``window`` the numbers cover (when live), and a
+    ``source`` label so the UI is honest. Pass ``live`` matching the run's mode so the
+    panel always agrees with the simulation. A sync def so the (possibly blocking) MCP
     call runs in a worker thread, not the event loop.
     """
-    import datetime as _dt
+    from gateway.instruments import _mcp_reference, resolve_instrument
 
-    from engine.presets import get_preset
-
-    # A curated ticker shows the same real reference values that drive its run, so the
-    # panel always agrees with the simulation (and stays consistent offline).
-    preset = get_preset(symbol)
-    if preset is not None:
-        return {
-            "symbol": preset.symbol,
-            "name": preset.name,
-            "reference_price": preset.reference_price,
-            "adv": preset.adv,
-            "free_float": preset.free_float,
-            "realized_vol_daily": preset.volatility,
-            "bars": 0,
-            "source": "curated",
-        }
-
-    from mcp.market_data.data import get_historical_window, get_instrument_reference
-
-    ref = get_instrument_reference(symbol)
-    end = _dt.date.today()
-    start = end - _dt.timedelta(days=120)
-    hist = get_historical_window(symbol, start.isoformat(), end.isoformat())
+    inst = resolve_instrument(symbol, live=live) or _mcp_reference(symbol)
     return {
-        "symbol": ref["symbol"],
-        "name": ref.get("name"),
-        "reference_price": ref["reference_price"],
-        "adv": ref["adv"],
-        "free_float": ref["free_float"],
-        "realized_vol_daily": hist.get("realized_vol_daily"),
-        "bars": len(hist.get("bars", [])),
-        "source": ref.get("source", "synthetic"),
+        "symbol": inst["symbol"],
+        "name": inst.get("name"),
+        "reference_price": inst["reference_price"],
+        "adv": inst["adv"],
+        "free_float": inst["free_float"],
+        "realized_vol_daily": inst["volatility"],
+        "window": inst.get("window"),
+        "bars": inst.get("bars", 0),
+        "source": inst["source"],
     }
 
 
@@ -170,7 +151,8 @@ async def _run_live(levers: dict[str, Any], use_gemini: bool) -> tuple[str, str,
         result = await run_live_simulation(scenario_prompt(levers))
         source = "live-gemini"
     else:
-        config = build_run_config(levers)
+        # A live run pulls the instrument's real Alpha Vantage data when available.
+        config = build_run_config(levers, live_data=True)
         result = await run_baseline_simulation(config)
         source = "live-baseline"
 
