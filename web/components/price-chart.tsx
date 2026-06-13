@@ -34,7 +34,7 @@ export function PriceChart({
   totalTicks: number;
 }) {
   const arrival = config?.position.arrival_price ?? config?.instrument.reference_price ?? 100;
-  const symbol = config?.instrument.symbol ?? "—";
+  const symbol = config?.instrument.symbol ?? "n/a";
 
   const prices = ticks.map((t) => t.last_price);
   const lo = Math.min(arrival, ...(prices.length ? prices : [arrival])) * 0.985;
@@ -105,7 +105,7 @@ export function PriceChart({
           </g>
         ))}
         <text x={PAD.left + 4} y={y(arrival) - 5} fill="var(--color-ink-faint)" fontSize={10}>
-          arrival
+          start price
         </text>
 
         {/* halt bands */}

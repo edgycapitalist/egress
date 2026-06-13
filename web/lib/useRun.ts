@@ -92,7 +92,7 @@ export function useRun() {
     };
 
     ws.onerror = () => {
-      // A drop after the outcome arrived is just an unclean close, not a failure —
+      // A drop after the outcome arrived is just an unclean close, not a failure -
       // the cascade and metrics are already in hand, so treat it as complete.
       setState((s) =>
         s.status === "done" || s.metrics

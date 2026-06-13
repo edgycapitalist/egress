@@ -66,7 +66,7 @@ export function OrderBook({ ticks }: { ticks: TickEvent[] }) {
       <div className="flex items-stretch justify-between gap-3 rounded-[8px] border border-line bg-surface-2/60 p-3">
         <div className="space-y-0.5">
           <div className="text-[11px] uppercase tracking-wider text-ink-faint">Best bid</div>
-          <div className="tnum text-[16px] text-buy">{bid != null ? fmtPrice(bid) : "—"}</div>
+          <div className="tnum text-[16px] text-buy">{bid != null ? fmtPrice(bid) : "n/a"}</div>
         </div>
         <div className="flex flex-col items-center justify-center">
           <div className="text-[11px] uppercase tracking-wider text-ink-faint">Spread</div>
@@ -76,17 +76,17 @@ export function OrderBook({ ticks }: { ticks: TickEvent[] }) {
         </div>
         <div className="space-y-0.5 text-right">
           <div className="text-[11px] uppercase tracking-wider text-ink-faint">Best ask</div>
-          <div className="tnum text-[16px] text-sell">{ask != null ? fmtPrice(ask) : "—"}</div>
+          <div className="tnum text-[16px] text-sell">{ask != null ? fmtPrice(ask) : "n/a"}</div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <DepthBar label="Bid depth" value={last?.depth_bid ?? 0} max={maxDepth} color="var(--color-buy)" align="left" />
-        <DepthBar label="Ask depth" value={last?.depth_ask ?? 0} max={maxDepth} color="var(--color-sell)" align="right" />
+        <DepthBar label="Buyer depth" value={last?.depth_bid ?? 0} max={maxDepth} color="var(--color-buy)" align="left" />
+        <DepthBar label="Seller depth" value={last?.depth_ask ?? 0} max={maxDepth} color="var(--color-sell)" align="right" />
       </div>
 
       <div>
-        <div className="mb-1 text-[11px] text-ink-faint">Buy-side support draining</div>
+        <div className="mb-1 text-[11px] text-ink-faint">Buyers&apos; support draining over time</div>
         <Sparkline values={bidHist} color="var(--color-buy)" />
       </div>
     </div>

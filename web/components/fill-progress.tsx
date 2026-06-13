@@ -31,10 +31,12 @@ export function FillProgress({
       </div>
       <div className="flex items-center justify-between text-[12px]">
         <span className="text-ink-faint">
-          VWAP sold <span className="tnum text-ink-muted">{vwap != null ? fmtPrice(vwap) : "—"}</span>
+          Avg sale price{" "}
+          <span className="tnum text-ink-muted">{vwap != null ? fmtPrice(vwap) : "n/a"}</span>
         </span>
         <span className="text-ink-faint">
-          vs arrival <span className="tnum text-ink-muted">{arrival != null ? fmtPrice(arrival) : "—"}</span>
+          Start price{" "}
+          <span className="tnum text-ink-muted">{arrival != null ? fmtPrice(arrival) : "n/a"}</span>
         </span>
       </div>
     </div>

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Egress — crisis-exit simulator",
+  title: "Egress: crisis-exit simulator",
   description:
-    "Simulate how an investment position behaves in a crisis before the money is committed. A market of thousands of agents, a draining order book, and a plain-language explanation of why the exit closed.",
+    "See whether you could sell a position in a market crash before the exit closes. Egress simulates a market of thousands of traders, shows the order book draining in real time, and explains in plain language why the exit held or closed.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

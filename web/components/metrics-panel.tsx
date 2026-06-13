@@ -44,14 +44,14 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
   }
 
   const exited =
-    metrics.time_to_exit_ticks != null ? `${metrics.time_to_exit_ticks} ticks` : "never";
+    metrics.time_to_exit_ticks != null ? `${metrics.time_to_exit_ticks} steps` : "never";
 
   return (
     <div className={cn("grid grid-cols-2 sm:grid-cols-3 divide-x divide-y divide-line")}>
       <Metric
-        label="Fill rate"
+        label="Sold"
         value={fmtPct(metrics.fill_rate, 0)}
-        sub={`${fmtInt(metrics.filled_qty)} sold`}
+        sub={`${fmtInt(metrics.filled_qty)} shares`}
         tone={metrics.fill_rate < 0.5 ? "sell" : "buy"}
       />
       <Metric
@@ -61,21 +61,21 @@ export function MetricsPanel({ metrics }: { metrics: Metrics | null }) {
         tone={metrics.pct_stuck > 0.3 ? "sell" : "ink"}
       />
       <Metric
-        label="Max drawdown"
+        label="Worst price drop"
         value={fmtPct(metrics.max_drawdown_pct, 0)}
-        sub={`final ${metrics.final_price.toFixed(2)}`}
+        sub={`ended at ${metrics.final_price.toFixed(2)}`}
         tone="sell"
       />
-      <Metric label="Slippage" value={fmtBps(metrics.slippage_bps)} sub="vs arrival" />
+      <Metric label="Slippage" value={fmtBps(metrics.slippage_bps)} sub="vs start price" />
       <Metric
-        label="Impl. shortfall"
+        label="Total cost"
         value={fmtBps(metrics.implementation_shortfall_bps)}
-        sub={`VWAP ${metrics.vwap_sold != null ? metrics.vwap_sold.toFixed(2) : "—"}`}
+        sub={`avg sale ${metrics.vwap_sold != null ? metrics.vwap_sold.toFixed(2) : "n/a"}`}
       />
       <Metric
         label="Time to exit"
         value={exited}
-        sub={`${metrics.halt_count} halt${metrics.halt_count === 1 ? "" : "s"} · ${metrics.ticks_run} ticks`}
+        sub={`${metrics.halt_count} halt${metrics.halt_count === 1 ? "" : "s"} · ${metrics.ticks_run} steps`}
         tone={metrics.halt_triggered ? "halt" : "ink"}
       />
     </div>

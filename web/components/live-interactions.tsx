@@ -17,12 +17,12 @@ export function LiveInteractions({
   return (
     <div>
       <div className="px-4 pt-1 pb-1 text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-        Order book — buy-side liquidity draining
+        Order book: the buyers you can sell into
       </div>
       <OrderBook ticks={ticks} />
       <div className="mx-4 h-px bg-line" />
       <div className="px-4 pt-3 pb-0.5 text-[11px] uppercase tracking-[0.12em] text-ink-faint">
-        Seller surges — who is hitting the book each tick
+        Sellers hitting the market at each step
       </div>
       <CascadeFlow ticks={ticks} totalTicks={totalTicks} />
     </div>

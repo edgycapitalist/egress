@@ -34,10 +34,10 @@ export function SourcedInputs({
   const live = data.source === "alphavantage";
   const curated = data.source === "curated";
   const sourceLabel = live
-    ? "Live feed · Alpha Vantage"
+    ? "Live data · Alpha Vantage"
     : curated
-      ? "Curated reference"
-      : "Synthetic fallback";
+      ? "Saved reference"
+      : "Stand-in data";
   return (
     <div className="space-y-3 px-4 pb-4">
       <div className="flex items-center justify-between gap-2">
@@ -48,20 +48,20 @@ export function SourcedInputs({
         <Badge tone={live ? "buy" : curated ? "accent" : "neutral"}>{sourceLabel}</Badge>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-        <Field label="Reference price" value={fmtPrice(data.reference_price)} />
+        <Field label="Price" value={fmtPrice(data.reference_price)} />
         <Field label="Avg daily volume" value={`${fmtInt(data.adv)} shares`} />
         <Field
-          label="Volatility (daily)"
-          value={data.realized_vol_daily != null ? fmtPct(data.realized_vol_daily, 1) : "—"}
+          label="Daily volatility"
+          value={data.realized_vol_daily != null ? fmtPct(data.realized_vol_daily, 1) : "n/a"}
         />
-        <Field label="Free float" value={`${fmtInt(data.free_float)} shares`} />
+        <Field label="Shares tradable" value={`${fmtInt(data.free_float)} shares`} />
       </div>
       <p className="text-[10.5px] text-ink-faint">
         {data.window?.start && data.window?.end
-          ? `Data window: ${data.window.start} → ${data.window.end} (${data.bars} sessions)`
+          ? `Covers ${data.window.start} to ${data.window.end} (${data.bars} trading days)`
           : curated
-            ? "Representative reference for the episode window — not a live quote."
-            : "Synthetic fallback — no live feed configured."}
+            ? "A representative reference for this episode, not a live quote."
+            : "Stand-in numbers. No live data feed is configured."}
       </p>
     </div>
   );

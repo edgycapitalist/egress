@@ -15,7 +15,7 @@ export function AnalystPanel({
       ? "Gemini analyst"
       : source === "cached"
         ? "Analyst (recorded)"
-        : "Analyst (deterministic)";
+        : "Analyst (no AI)";
 
   // The analyst writes a few sentences joined by double-spaces; split for rhythm.
   const paras = analysis

@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 /*
-  Egress design tokens — restrained and intentional, not a default template.
+  Egress design tokens - restrained and intentional, not a default template.
   A near-black, faintly cool base; one neutral scale; colour reserved for data
   semantics: warm for selling/stress, cool for buying/fills, amber for a halt.
-  Numbers are tabular mono throughout — this is a trading tool.
+  Numbers are tabular mono throughout - this is a trading tool.
 
   `static` so every token is emitted even when it is only referenced via inline
   `var(--color-…)` (e.g. the SVG fills in the cascade flow), not a utility class.
@@ -21,7 +21,7 @@
   --color-ink-muted: #9aa1ad;
   --color-ink-faint: #5f6672;
 
-  /* Signal palette — semantic, used sparingly. */
+  /* Signal palette - semantic, used sparingly. */
   --color-sell: #e5484d; /* falling price, forced/panic sellers */
   --color-sell-dim: #7a2327;
   --color-buy: #30a46c; /* fills, bargain hunters */
@@ -89,7 +89,7 @@ body {
   background: transparent;
 }
 
-/* Range input, styled to match — no default browser chrome. */
+/* Range input, styled to match - no default browser chrome. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
