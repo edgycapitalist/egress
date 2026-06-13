@@ -59,6 +59,32 @@ def _mcp_reference(symbol: str) -> dict[str, Any]:
     }
 
 
+def _synthetic_reference(symbol: str) -> dict[str, Any]:
+    """A seeded synthetic reference that never touches the live feed.
+
+    Used as the fallback for a non-live query of an unknown symbol, so a cached/
+    offline lookup can never make a real Alpha Vantage call.
+    """
+    from mcp.market_data.data import _reference, _synthetic_historical
+
+    ref = _reference(symbol)
+    end = _dt.date.today()
+    start = end - _dt.timedelta(days=_WINDOW_DAYS)
+    hist = _synthetic_historical(symbol, start.isoformat(), end.isoformat())
+    vol = hist.get("realized_vol_daily") or 0.0
+    return {
+        "symbol": symbol.strip().upper(),
+        "name": ref.get("name"),
+        "reference_price": float(ref["reference_price"]),
+        "adv": int(ref["adv"]),
+        "free_float": int(ref["free_float"]),
+        "volatility": max(_MIN_VOL, float(vol)) if vol else _DEFAULT_VOL,
+        "source": "synthetic",
+        "window": None,
+        "bars": len(hist.get("bars", [])),
+    }
+
+
 def _preset_reference(symbol: str) -> dict[str, Any] | None:
     preset = get_preset(symbol)
     if preset is None:

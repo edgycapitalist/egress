@@ -96,6 +96,9 @@ async def scenario_defaults() -> dict[str, Any]:
             "sellers pile on, and bargain-hunter and market-maker support is thin."
         ),
         "gemini_enabled": _gemini_enabled(),
+        # Whether a live run can fetch real Alpha Vantage data, so the UI can say so
+        # honestly instead of implying real data when only the synthetic fallback runs.
+        "av_enabled": bool(os.environ.get("ALPHAVANTAGE_API_KEY")),
     }
 
 
@@ -111,9 +114,11 @@ def instrument_reference(symbol: str, live: bool = False, period: str = "recent"
     panel always agrees with the simulation. A sync def so the (possibly blocking) MCP
     call runs in a worker thread, not the event loop.
     """
-    from gateway.instruments import _mcp_reference, resolve_instrument
+    from gateway.instruments import _synthetic_reference, resolve_instrument
 
-    inst = resolve_instrument(symbol, live=live) or _mcp_reference(symbol)
+    # resolve_instrument returns None only for a non-live query of an unknown symbol;
+    # fall back to a synthetic reference there so a non-live lookup never calls the feed.
+    inst = resolve_instrument(symbol, live=live) or _synthetic_reference(symbol)
     return {
         "symbol": inst["symbol"],
         "name": inst.get("name"),
