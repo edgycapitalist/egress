@@ -114,12 +114,16 @@ export default function Page() {
     <div className="mx-auto flex min-h-screen max-w-[1500px] flex-col px-5 py-5 lg:px-7">
       {/* Header */}
       <header className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Logo />
-          <div>
-            <h1 className="text-[15px] font-semibold tracking-tight text-ink">Egress</h1>
-            <p className="text-[11.5px] text-ink-faint">Crisis-exit liquidity simulator</p>
-          </div>
+        <div className="flex items-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/Egress-genlogo.png"
+            alt="Egress"
+            className="h-12 w-auto mix-blend-screen"
+          />
+          <span className="text-[13px] font-medium tracking-tight text-ink-muted">
+            Liquidity Simulator
+          </span>
         </div>
         <div className="flex items-center gap-2.5">
           {state.source ? (
@@ -363,29 +367,5 @@ function EmptyState() {
         </p>
       </div>
     </Card>
-  );
-}
-
-function Logo() {
-  // An exit door with an arrow leaving through it - the position trying to get out.
-  return (
-    <div className="relative flex h-9 w-9 items-center justify-center rounded-[9px] border border-line-strong bg-surface-2">
-      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none">
-        <path
-          d="M13 4H6v16h7"
-          stroke="var(--color-ink-faint)"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M11 12h9m-4-4 4 4-4 4"
-          stroke="var(--color-sell)"
-          strokeWidth="1.7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </div>
   );
 }
