@@ -109,22 +109,30 @@ export interface Levers {
   seed?: number;
 }
 
-// Curated tickers for the live-run instrument picker. Selecting one swaps in that
-// name's real ADV/volatility on the gateway and sizes the position at a fixed %ADV,
-// so the liquid-vs-illiquid difference is visible. "" keeps the flagship + manual size.
+// Tickers for the instrument picker. The same symbol means different things by mode:
+// in CACHED mode it replays a recorded historical-reference episode; in LIVE mode the
+// gateway fetches the name's CURRENT real data (Alpha Vantage) and runs the engine on
+// it. "" keeps the flagship + manual size. Labels are mode-aware via tickerLabel().
 export interface TickerPreset {
-  symbol: string;
-  label: string;
+  symbol: string; // "" = flagship / manual size
+  name: string; // short company name
+  era: string; // the historical reference window the cached recording represents
   group: "liquid" | "illiquid" | "custom";
 }
 
 export const TICKER_PRESETS: TickerPreset[] = [
-  { symbol: "", label: "Flagship (CVNA) — manual size", group: "custom" },
-  { symbol: "CVNA", label: "CVNA · Carvana (illiquid)", group: "illiquid" },
-  { symbol: "SIVB", label: "SIVB · SVB Financial (illiquid)", group: "illiquid" },
-  { symbol: "AAPL", label: "AAPL · Apple (liquid)", group: "liquid" },
-  { symbol: "SPY", label: "SPY · S&P 500 ETF (liquid)", group: "liquid" },
+  { symbol: "", name: "Flagship (CVNA)", era: "", group: "custom" },
+  { symbol: "CVNA", name: "Carvana", era: "late-2022", group: "illiquid" },
+  { symbol: "SIVB", name: "SVB Financial", era: "Mar-2023", group: "illiquid" },
+  { symbol: "AAPL", name: "Apple", era: "bad-earnings day", group: "liquid" },
+  { symbol: "SPY", name: "S&P 500 ETF", era: "drawdown", group: "liquid" },
 ];
+
+// Honest, mode-aware label: cached = recorded historical reference, live = current data.
+export function tickerLabel(p: TickerPreset, cached: boolean): string {
+  if (!p.symbol) return cached ? "Flagship (CVNA) — recorded demo" : "Flagship (CVNA) — manual size";
+  return cached ? `${p.symbol} — ${p.era} reference` : `${p.symbol} — live (current data)`;
+}
 
 // Real sourced inputs for an instrument (from the gateway's /api/instrument).
 export interface SourcedInput {

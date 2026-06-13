@@ -210,7 +210,11 @@ export default function Page() {
                 <Card className="fadeup overflow-hidden">
                   <CardHeader
                     title="Sourced inputs"
-                    caption="The real instrument behind this run — price, volume and volatility — from the live market-data feed, not fixed numbers."
+                    caption={
+                      live
+                        ? "This live run's current real data (Alpha Vantage) — price, ADV, volatility — over the most recent ~100 trading days. Free-tier data is ~100 days of daily history, so live uses current conditions, not the historical crisis window."
+                        : "Recorded historical-reference values for this cached replay — representative price, volume and volatility for the episode window, not a live quote."
+                    }
                   />
                   <SourcedInputs data={sourced} loading={sourcedLoading} />
                 </Card>

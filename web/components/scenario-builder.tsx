@@ -7,6 +7,7 @@ import {
   INVESTOR_LABELS,
   investorColor,
   TICKER_PRESETS,
+  tickerLabel,
   type InvestorType,
   type Levers,
 } from "@/lib/types";
@@ -124,10 +125,10 @@ export function ScenarioBuilder({
           ) : null}
           <p className="text-[11px] leading-relaxed text-ink-faint">
             {cached
-              ? "Replays the recorded flagship cascade — fully offline, identical every time."
+              ? "Replays a recorded historical-reference episode — fully offline, identical every time."
               : state.gemini
-                ? "Runs the agents for real: Gemini sets each archetype's stance, the engine runs the market."
-                : "Runs the deterministic pipeline now — the levers below drive a fresh simulation."}
+                ? "Runs the agents for real: Gemini sets each archetype's stance, the engine runs the market on the instrument's current real data."
+                : "Runs the engine now on the instrument's current real data (Alpha Vantage). This is today's conditions — it does not reproduce the historical crisis."}
           </p>
         </div>
 
@@ -163,14 +164,14 @@ export function ScenarioBuilder({
           >
             {TICKER_PRESETS.map((p) => (
               <option key={p.symbol || "custom"} value={p.symbol}>
-                {p.label}
+                {tickerLabel(p, cached)}
               </option>
             ))}
           </select>
           <Caption>
-            {tickerActive
-              ? "Real reference price, ADV, free float and volatility for this name drive the run, with the position set to 20% of its ADV so deep and thin names compare fairly. Cached replays this name's recording; Live re-runs the engine. Pick a liquid name (AAPL, SPY) vs a crowded one (CVNA, SIVB) to see the exit stay open or close."
-              : "Pick a real ticker to run one fixed configuration against its real liquidity — cached replays that name's recording, live re-runs the engine. Keep the flagship to set the share count by hand below."}
+            {cached
+              ? "Cached replays this name's recorded historical-reference episode (CVNA late-2022, SVB Mar-2023) — fixed prices, identical every time. The position is sized at 20% of ADV so deep and thin names compare fairly."
+              : "Live fetches this name's current real data (price, ADV, free float, volatility) and runs the engine on it, position sized at 20% of ADV. This is today's conditions, not the historical crisis — a name that has since recovered will behave differently."}
           </Caption>
         </div>
 
