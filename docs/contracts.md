@@ -54,7 +54,10 @@ run starts). Consumed by engine setup and by the archetype agents.
     "tick_size": 0.01,             // minimum price increment
     "adv": 5000000,                // average daily volume, shares (from Market Data MCP)
     "free_float": 120000000,       // shares
-    "halt_tier": 1                 // exchange halt tier -> drives halt_rule defaults
+    "halt_tier": 1,                // exchange halt tier -> drives halt_rule defaults
+    "volatility": 0.03             // real daily realized vol; scales book depth + cascade
+                                   //   propensity. Optional; defaults to the reference
+                                   //   level (0.09) so an omitted value behaves as before.
   },
 
   "position": {
@@ -103,8 +106,17 @@ run starts). Consumed by engine setup and by the archetype agents.
 - `position.quantity > 0`; `population_size > 0`; `0 < ticks_per_window ≤ max_ticks`.
 - `exit_speed.mode` is one of the three allowed values; the field its mode needs
   is present (`participation_rate` for `participation`, `horizon_ticks` for `twap`).
-- `instrument.tick_size > 0`, `reference_price > 0`.
+- `instrument.tick_size > 0`, `reference_price > 0`, `volatility > 0`.
 - Every `shock_schedule[i].tick` is in `[0, max_ticks)`; `severity` in `[0, 1]`.
+
+**Liquidity semantics (v0.2.0).** The engine consumes the real instrument data so a
+run tracks the name, not just the scenario: resting book depth and per-agent order
+sizes scale with `adv` (capped by `free_float`), the exit's participation works off
+an `adv`-derived natural volume, and `volatility` (relative to the `0.09` reference)
+scales how readily the name cascades — its stress transitions and the size of a
+price-shock gap. A deep, low-vol name (e.g. SPY) absorbs a large `%ADV` exit without
+halting; a thin, high-vol name (e.g. SIVB) closes. A name at the reference vol with
+the flagship's ADV reproduces the pre-v0.2.0 behaviour exactly.
 
 ---
 
@@ -301,3 +313,4 @@ version so an old recording is always interpretable.
 | Version | Date | Change |
 | --- | --- | --- |
 | `0.1.0` | 2026-06-11 | Initial boundary: `RunConfig`, `Stance`, `MarketState`, `TickEvent`, `Metrics`, NDJSON record, and the `session.state` keys. |
+| `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |

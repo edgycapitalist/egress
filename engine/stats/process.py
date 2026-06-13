@@ -29,21 +29,33 @@ class StressRegime:
         self.stressed = False
         self.level = 0.0
 
-    def step(self, drop: float, shock_severity: float, rng: np.random.Generator) -> float:
-        """Advance one tick. ``drop`` is the fractional fall from reference price."""
-        # Transition probabilities are pushed by the drop and any news shock.
-        pressure = max(0.0, drop) * 2.0 + shock_severity
+    def step(
+        self,
+        drop: float,
+        shock_severity: float,
+        rng: np.random.Generator,
+        vol_gain: float = 1.0,
+    ) -> float:
+        """Advance one tick. ``drop`` is the fractional fall from reference price.
+
+        ``vol_gain`` (the name's daily volatility relative to the reference level)
+        calibrates how prone this instrument is to cascade: a calm, deep name
+        (``vol_gain`` well below 1) resists flipping into stress and stays mild even
+        when it does, so its market makers keep quoting and the exit stays open; a
+        fragile name (``vol_gain`` above 1) ignites readily. At ``vol_gain == 1``
+        every term reduces to the original fixed-probability regime.
+        """
+        raw_pressure = max(0.0, drop) * 2.0 + shock_severity
+        pressure = raw_pressure * vol_gain
         if self.stressed:
             if rng.random() < self.p_sc * (1.0 - min(pressure, 0.9)):
                 self.stressed = False
         else:
-            if rng.random() < self.p_cs + pressure:
+            if rng.random() < self.p_cs * vol_gain + pressure:
                 self.stressed = True
 
-        target = 0.0
-        if self.stressed:
-            target = 1.0
-        target = float(np.clip(target * 0.6 + max(0.0, drop) * 2.0 + shock_severity, 0.0, 1.0))
+        target = 1.0 if self.stressed else 0.0
+        target = float(np.clip(target * 0.6 * vol_gain + raw_pressure * vol_gain, 0.0, 1.0))
         # Smooth so stress eases rather than snapping back.
         self.level += 0.5 * (target - self.level)
         return self.level

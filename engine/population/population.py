@@ -26,6 +26,14 @@ from engine.schema import INVESTOR_TYPES, InvestorType, Stance
 # Stable integer id per type, in canonical order.
 TYPE_ID: dict[InvestorType, int] = {t: i for i, t in enumerate(INVESTOR_TYPES)}
 
+# The crowd's resting depth and order flow scale with the instrument's real ADV:
+# liquidity_unit = ADV / population_size is the per-agent share scale. These
+# constants are chosen so a name at the flagship's ADV (12M over 5000 agents =>
+# unit 2400) reproduces the original fixed sizes — 1200-share quotes, 1500-share
+# holdings — leaving that run byte-identical while deeper/thinner names now differ.
+LP_DEPTH_K = 0.5  # 0.5 * 2400 = 1200
+HOLDINGS_K = 0.625  # 0.625 * 2400 = 1500
+
 
 @dataclass
 class OrderIntent:
@@ -63,11 +71,19 @@ class Population:
             cursor += c
         self.type_id = type_id
 
+        # Real liquidity drives the absolute scale: quote sizes and holdings are
+        # proportional to the name's ADV, so a deep name has a genuinely deeper book.
+        liq_unit = config.instrument.adv / n
+
         # Per-agent stagger factor (fixed) applied to the stance threshold, and a
         # base order size. Sellers hold sellable shares; buyers hold buy capacity.
         self.factor = (0.4 + 1.6 * rng.random(n)).astype(np.float64)
-        self.size_base = rng.lognormal(mean=np.log(1200.0), sigma=0.6, size=n)
-        self.holdings = rng.lognormal(mean=np.log(1500.0), sigma=0.6, size=n)
+        self.size_base = rng.lognormal(mean=np.log(LP_DEPTH_K * liq_unit), sigma=0.6, size=n)
+        self.holdings = rng.lognormal(mean=np.log(HOLDINGS_K * liq_unit), sigma=0.6, size=n)
+        # Free float caps what any agent can hold and sell — you cannot sell shares
+        # that do not exist. Applied after the draw (consumes no RNG); it binds only
+        # for a name whose float is unusually thin relative to its volume.
+        self.holdings = np.minimum(self.holdings, config.instrument.free_float / n)
         self.has_acted = np.zeros(n, dtype=bool)
 
         # Precompute index arrays per type for cheap masking each tick.

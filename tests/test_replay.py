@@ -1,7 +1,7 @@
 """NDJSON record/replay round-trip tests."""
 
 from engine.replay.recorder import Recorder, load_replay
-from engine.schema import Metrics, RunConfig, TickEvent
+from engine.schema import SCHEMA_VERSION, Metrics, RunConfig, TickEvent
 
 
 def _config() -> RunConfig:
@@ -51,7 +51,7 @@ def test_round_trip(tmp_path) -> None:
         rec.write_metrics(metrics)
 
     meta, ticks, loaded_metrics = load_replay(path)
-    assert meta.schema_version == "0.1.0"
+    assert meta.schema_version == SCHEMA_VERSION
     assert meta.config.run_id == "r-1"
     assert len(ticks) == 3
     assert ticks[1].last_price == 99.0

@@ -13,7 +13,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "0.1.0"
+SCHEMA_VERSION = "0.2.0"
+
+#: Reference daily realized volatility. A name at this level has ``vol_gain == 1``
+#: (the crisis-fragile regime the engine was originally tuned to); a calmer name
+#: scales below it. Instruments default to this so a config that does not specify
+#: volatility behaves exactly as before this field existed.
+REFERENCE_VOLATILITY = 0.09
 
 InvestorType = Literal[
     "forced_seller",
@@ -48,6 +54,11 @@ class Instrument(BaseModel):
     adv: int = Field(gt=0, description="average daily volume, shares")
     free_float: int = Field(gt=0)
     halt_tier: int = 1
+    volatility: float = Field(
+        default=REFERENCE_VOLATILITY,
+        gt=0,
+        description="real daily realized volatility; scales book depth and cascade propensity",
+    )
 
 
 class Position(BaseModel):

@@ -29,6 +29,7 @@ from engine.population.trader import ExitTrader
 from engine.replay.recorder import Recorder
 from engine.schema import (
     INVESTOR_TYPES,
+    REFERENCE_VOLATILITY,
     Depth,
     Fill,
     InvestorType,
@@ -42,6 +43,12 @@ from engine.stats.process import StressRegime
 
 LOOKBACK = 5  # ticks for the recent-return signal
 STALL_TICKS = 40  # end the run if no trades print for this long and the exit is stuck
+# How far the real volatility can scale the cascade propensity, either way.
+VOL_GAIN_BOUNDS = (0.05, 2.5)
+# Ticks that stand in for one ADV's worth of trading. The natural per-tick market
+# volume a participation algo works against is ADV / this, so the full run (max_ticks)
+# represents a few sessions — enough to complete a large %ADV exit when liquidity allows.
+ADV_SESSION_TICKS = 100
 
 
 class Engine:
@@ -55,9 +62,21 @@ class Engine:
         self.tick_size = config.instrument.tick_size
         self.last_price = ref
 
+        # Real volatility, relative to the reference level, scales how readily this
+        # name cascades (stress transitions) and how hard a price shock gaps it.
+        # A name at the reference vol has vol_gain == 1 and behaves as before.
+        lo, hi = VOL_GAIN_BOUNDS
+        self.vol_gain = float(
+            np.clip(config.instrument.volatility / REFERENCE_VOLATILITY, lo, hi)
+        )
+
         self.book = OrderBook(self.tick_size, ref)
         self.population = Population(config, self.rng)
-        self.trader = ExitTrader(config.position, config.exit_speed)
+        self.trader = ExitTrader(
+            config.position,
+            config.exit_speed,
+            natural_volume=config.instrument.adv // ADV_SESSION_TICKS,
+        )
         self.halt = HaltController(config.halt_rule)
         self.stress_regime = StressRegime()
 
@@ -108,14 +127,15 @@ class Engine:
         shock = self._shocks.get(tick)
         shock_sev = shock.severity if shock else 0.0
 
-        # A price shock gaps the last price down before any trading.
+        # A price shock gaps the last price down before any trading; a deep, calm
+        # name barely gaps, a fragile one gaps hard.
         if shock and shock.kind == "price":
             self.last_price = snap_to_tick(
-                self.last_price * (1.0 - 0.08 * shock.severity), self.tick_size
+                self.last_price * (1.0 - 0.08 * shock.severity * self.vol_gain), self.tick_size
             )
 
         drop = max(0.0, (self.ref_price - self.last_price) / self.ref_price)
-        self.stress = self.stress_regime.step(drop, shock_sev, self.rng)
+        self.stress = self.stress_regime.step(drop, shock_sev, self.rng, self.vol_gain)
         recent_return = (self.last_price - self._price_hist[0]) / self._price_hist[0]
 
         view = MarketView(

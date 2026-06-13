@@ -32,6 +32,7 @@ def flagship_scenario(seed: int = 42) -> RunConfig:
             adv=12_000_000,
             free_float=90_000_000,
             halt_tier=1,
+            volatility=0.09,  # high daily realized vol of the late-2022 unwind (= reference)
         ),
         position=dict(side="sell", quantity=250_000, arrival_price=15.0),
         exit_speed=dict(mode="participation", participation_rate=0.12),
