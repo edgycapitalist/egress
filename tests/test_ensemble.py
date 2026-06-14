@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from agents.analyst.baseline import render_ensemble_summary
 from agents.orchestrator.driver import run_baseline_ensemble
 from engine.ensemble import peer_crowding_cases, run_ensemble
 from engine.replay.recorder import load_replay
@@ -81,4 +82,16 @@ async def test_driver_returns_gateway_ready_ensemble(tmp_path: Path) -> None:
     assert result["error"] is None
     assert result["ensemble_result"]["type"] == "ensemble"
     assert result["representative_replay_ref"]
+    assert result["analysis"]
     assert Path(result["representative_replay_ref"]).exists()
+
+
+def test_ensemble_analysis_explains_ranges_and_assumptions(tmp_path: Path) -> None:
+    cfg = _fast_config("analysis-ensemble")
+    result = run_ensemble(cfg, replay_dir=tmp_path, seeds=[31])
+    text = render_ensemble_summary(cfg.model_dump(), result.model_dump())
+
+    assert "low/base/high" in text
+    assert "stuck range" in text
+    assert "assumption-based stress" in text
+    assert "scheduled crisis shocks" in text

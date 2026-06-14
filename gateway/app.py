@@ -24,14 +24,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from engine.scenarios import flagship_scenario
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from gateway.replay import DEFAULT_BATCH, frames_from_replay
+from gateway.replay import DEFAULT_BATCH, frames_from_replay, read_records
 from gateway.run_config import EXIT_SPEED_PRESETS, build_run_config, scenario_prompt
 
 # The committed cached replay lives under docs/ (version-controlled; runs/ is
@@ -58,6 +59,7 @@ def _cached_replay_for(symbol: str | None) -> Path:
 
 # Demo pacing: ms of dwell between successive tick batches so the cascade animates.
 DEFAULT_PACE_MS = int(os.getenv("EGRESS_PACE_MS", "110"))
+ProgressSender = Callable[[str], Awaitable[None]]
 
 app = FastAPI(title="Egress Gateway", version="0.3.0")
 
@@ -154,6 +156,34 @@ def positioning_evidence(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _safe_replay_path(ref: str) -> Path:
+    """Resolve a frontend replay ref without exposing arbitrary filesystem reads."""
+    requested = Path(str(ref or ""))
+    if not str(requested):
+        raise HTTPException(status_code=400, detail="Missing replay ref.")
+    candidate = requested if requested.is_absolute() else Path.cwd() / requested
+    resolved = candidate.resolve()
+    roots = [(Path.cwd() / "runs").resolve(), REPLAY_DIR.resolve()]
+    if not any(resolved == root or resolved.is_relative_to(root) for root in roots):
+        raise HTTPException(status_code=400, detail="Replay ref is outside allowed roots.")
+    if not resolved.exists():
+        raise HTTPException(status_code=404, detail="Replay not found.")
+    return resolved
+
+
+@app.get("/api/replay")
+def replay_payload(ref: str) -> dict[str, Any]:
+    """Return one recorded replay for case selection in the frontend."""
+    meta, ticks, metrics = read_records(_safe_replay_path(ref))
+    return {
+        "schema_version": meta.get("schema_version"),
+        "config": meta.get("config"),
+        "total_ticks": len(ticks),
+        "ticks": ticks,
+        "metrics": metrics,
+    }
+
+
 def _gemini_enabled() -> bool:
     """True only when a live Gemini run is both requested-capable and configured."""
     if os.getenv("EGRESS_LIVE_GEMINI", "").lower() not in {"1", "true", "yes"}:
@@ -168,7 +198,10 @@ def _gemini_enabled() -> bool:
 
 
 async def _run_live(
-    levers: dict[str, Any], use_gemini: bool, gemini_mode: str | None = None
+    levers: dict[str, Any],
+    use_gemini: bool,
+    gemini_mode: str | None = None,
+    progress: ProgressSender | None = None,
 ) -> tuple[str, str, str | None, dict[str, Any] | None]:
     """Drive a fresh run. Returns (replay_path, source, analysis, ensemble)."""
     from agents.orchestrator.driver import (  # lazy: keeps cached path import-light
@@ -179,6 +212,11 @@ async def _run_live(
 
     from gateway.crisis import derive_crisis_intensity
 
+    async def send(message: str) -> None:
+        if progress is not None:
+            await progress(message)
+
+    await send("Gathering market data and peer-crowding evidence…")
     text = str(levers.get("scenario_text") or "")
     intensity, _detail = derive_crisis_intensity(
         text, levers.get("symbol"), fetch_news=True
@@ -196,10 +234,12 @@ async def _run_live(
         )
         requested_mode = str(requested_mode).strip().lower().replace("-", "_")
         if requested_mode in {"detailed", "ai_detailed", "full"}:
+            await send("Running detailed Gemini stance-refresh simulation…")
             result = await run_live_simulation(scenario_prompt(levers))
             source = "live-gemini"
             ensemble = None
         else:
+            await send("Generating Gemini assumptions, then running the ensemble…")
             result = await run_fast_live_ensemble(
                 scenario_prompt(levers),
                 fallback_config=config,
@@ -213,6 +253,7 @@ async def _run_live(
         # (synthetic fallback when no key), then runs low/base/high peer-crowding
         # cases over fixed deterministic seeds. The representative replay animates
         # exactly like the old single run; the ensemble frame carries the ranges.
+        await send("Running low/base/high deterministic ensemble…")
         result = await run_baseline_ensemble(config)
         source = "live-baseline"
         ensemble = result.get("ensemble_result")
@@ -232,15 +273,21 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
     levers = request.get("scenario") or {}
 
     if mode == "live":
-        await ws.send_json({"type": "status", "message": "Running the simulation ensemble…"})
         try:
             replay_path, source, analysis, ensemble = await _run_live(
-                levers, bool(request.get("gemini")), request.get("gemini_mode")
+                levers,
+                bool(request.get("gemini")),
+                request.get("gemini_mode"),
+                progress=lambda message: ws.send_json(
+                    {"type": "status", "message": message}
+                ),
             )
+            await ws.send_json({"type": "status", "message": "Streaming representative path…"})
         except Exception as exc:  # surface a clean error frame, never a stack trace
             await ws.send_json({"type": "error", "message": f"Live run failed: {exc}"})
             return
     else:
+        await ws.send_json({"type": "status", "message": "Loading saved historical replay…"})
         replay_file = _cached_replay_for(levers.get("symbol"))
         if not replay_file.exists():
             await ws.send_json({"type": "error", "message": "Flagship replay not found."})

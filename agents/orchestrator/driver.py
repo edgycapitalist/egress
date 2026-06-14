@@ -27,6 +27,7 @@ from engine.schema import EvidenceSummary, RunConfig
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
+from agents.analyst.baseline import render_ensemble_summary
 from agents.common.env import assert_vertex_config, gemini_timeout_seconds, seed
 from agents.common.state import (
     ANALYSIS,
@@ -159,6 +160,9 @@ async def run_baseline_ensemble(
             "run_id": ensemble.run_id,
             "ensemble_result": ensemble.model_dump(),
             "representative_replay_ref": ensemble.representative_replay_ref,
+            "analysis": render_ensemble_summary(
+                config.model_dump(), ensemble.model_dump()
+            ),
             "timing_report": timing_state.get(TIMING_REPORT),
             "error": None,
         }

@@ -40,12 +40,19 @@ Cover, in a few tight paragraphs:
   slippage in plain terms, the drawdown, and the VWAP achieved versus the arrival
   price.
 - Whether a volatility halt triggered, and if so how it shaped the outcome.
+- If impact-attribution fields are present, separate scheduled crisis shock moves
+  from endogenous trading impact and liquidity-withdrawal impact. Do not imply
+  every price move came only from agent trades.
+- If peer-crowding, time-scale, or evidence-summary fields are present, name the
+  main assumption source/confidence and explain the result as a stress scenario.
 - The mechanism: why the exit closed (or did not). Tie it to the crowding mix —
   forced sellers and panic sellers overwhelming thin bargain-hunter and
   market-maker support — and to the shocks in the scenario.
 
 Be concrete and honest. Do not invent numbers beyond those given. If the position
-exited cleanly, say so. Do not recommend trades; explain what happened."""
+exited cleanly, say so. Use institutional-safe language such as "under this
+scenario" and "assumption-based stress result"; do not call it a forecast. Do not
+recommend trades; explain what happened."""
 
 
 def _context_block(ctx: ReadonlyContext) -> str:
@@ -61,6 +68,9 @@ def _context_block(ctx: ReadonlyContext) -> str:
         f"Instrument: {json.dumps(instrument)}\n"
         f"Position: {json.dumps(position)}\n"
         f"Crowding mix: {json.dumps(mix)}\n"
+        f"Peer crowding: {json.dumps(scenario.get('peer_crowding'))}\n"
+        f"Time scale: {json.dumps(scenario.get('time_scale'))}\n"
+        f"Evidence summary: {json.dumps(scenario.get('evidence_summary'))}\n"
         f"Shocks: {json.dumps(scenario.get('shock_schedule', []))}\n"
         f"Final market state: {json.dumps(market)}\n"
         f"Metrics: {json.dumps(metrics)}\n"

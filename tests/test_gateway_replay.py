@@ -59,6 +59,8 @@ def test_cached_websocket_run_offline() -> None:
     with client.websocket_connect("/ws/run") as ws:
         ws.send_json({"mode": "cached", "pace_ms": 0})
         meta = ws.receive_json()
+        while meta["type"] == "status":
+            meta = ws.receive_json()
         assert meta["type"] == "meta" and meta["source"] == "cached"
         symbol = meta["config"]["instrument"]["symbol"]
 
@@ -198,3 +200,17 @@ def test_positioning_endpoint_reports_peer_evidence() -> None:
     ).json()
     assert uploaded["selected_source"] == "user_upload"
     assert uploaded["peer_crowding"]["peer_fund_count"] == 2
+
+
+def test_replay_endpoint_returns_selected_case_payload() -> None:
+    client = TestClient(app)
+    body = client.get("/api/replay", params={"ref": str(FLAGSHIP)}).json()
+    assert body["config"]["instrument"]["symbol"] == "CVNA"
+    assert body["ticks"]
+    assert body["total_ticks"] == len(body["ticks"])
+    assert body["metrics"]["type"] == "metrics"
+
+
+def test_replay_endpoint_rejects_paths_outside_replay_roots() -> None:
+    res = TestClient(app).get("/api/replay", params={"ref": "pyproject.toml"})
+    assert res.status_code == 400
