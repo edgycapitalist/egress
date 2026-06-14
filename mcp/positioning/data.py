@@ -5,18 +5,18 @@ They give Egress a first-class source for peer-crowding assumptions without paid
 positioning feeds. Source precedence is:
 
 1. User-uploaded holdings CSV (explicit user evidence).
-2. SEC EDGAR public-data lookup (opt-in, no API key, cached and throttled).
+2. SEC Form 13F structured-data lookup (opt-in, no API key, cached and throttled).
 3. Curated historical episode fixtures.
 4. Deterministic synthetic assumptions.
 
 SEC access is gated by ``EGRESS_ENABLE_SEC_EDGAR`` or ``SEC_USER_AGENT`` so the
 offline test suite never touches the network by accident. When enabled, calls use
-SEC's public JSON endpoints with a lower-than-guidance internal rate cap, an
-in-process/Postgres cache, and a small per-process cap. SEC's API does not expose
-a simple "all holders of this issuer" endpoint, so the v1 parser only turns SEC
-results into a peer profile when the response has holder/profile detail. Otherwise
-it records the SEC lookup as evidence and falls through to curated/synthetic
-assumptions for the actual peer-crowding profile.
+SEC's public data with a lower-than-guidance internal rate cap, an in-process/
+Postgres cache, and a small per-process cap. SEC issuer submissions do not expose
+a simple "all holders of this issuer" endpoint, so SEC only turns into peer
+crowding when the quarterly 13F bulk data yields actual holder rows for a CUSIP.
+Otherwise it records the SEC lookup as evidence and falls through to curated/
+synthetic assumptions for the actual peer-crowding profile.
 """
 
 from __future__ import annotations
@@ -50,6 +50,16 @@ _PROC_SEC_CALLS = 0
 _SEC_RATE_LIMITED = False
 
 _MEMO: dict[str, dict[str, Any]] = {}
+
+
+def _sec13f_module():
+    """Import the local 13F parser in package and path-script MCP modes."""
+    try:
+        from mcp.positioning import sec13f
+    except Exception:
+        import sec13f  # type: ignore[no-redef]
+
+    return sec13f
 
 
 def _now_iso() -> str:
@@ -159,6 +169,23 @@ def _sec_get_json(url: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _sec_get_bytes(url: str, label: str) -> bytes | None:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": _sec_user_agent(),
+            "Accept": "application/zip, application/octet-stream",
+            "Accept-Encoding": "identity",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 (SEC HTTPS)
+            return resp.read()
+    except Exception:
+        _log.warning("SEC EDGAR request failed for %s - serving fallback", label)
+        return None
+
+
 def _sec_call(cache_key: str, url: str, label: str) -> dict[str, Any] | None:
     """Cached, throttled SEC JSON call. Never raises."""
     global _LAST_SEC_TS, _PROC_SEC_CALLS, _SEC_RATE_LIMITED
@@ -190,6 +217,29 @@ def _sec_call(cache_key: str, url: str, label: str) -> dict[str, Any] | None:
     normalised = {"fetched_at": _now_iso(), "payload": payload}
     _cache_put("sec_edgar", cache_key, normalised)
     return normalised
+
+
+def _sec_binary_call(cache_key: str, url: str, label: str) -> bytes | None:
+    """Throttled SEC binary call. Local ZIP cache is handled by ``sec13f``."""
+    global _LAST_SEC_TS, _PROC_SEC_CALLS, _SEC_RATE_LIMITED
+    if not _sec_enabled() or _SEC_RATE_LIMITED:
+        return None
+    if _PROC_SEC_CALLS >= SEC_MAX_CALLS_PER_RUN:
+        _log.warning(
+            "SEC EDGAR per-run cap (%d) reached - serving fallback for %s",
+            SEC_MAX_CALLS_PER_RUN,
+            label,
+        )
+        return None
+    spacing = SEC_MIN_CALL_SPACING_S - (time.monotonic() - _LAST_SEC_TS)
+    if spacing > 0:
+        time.sleep(spacing)
+    payload = _sec_get_bytes(url, label)
+    _LAST_SEC_TS = time.monotonic()
+    if payload is None:
+        return None
+    _PROC_SEC_CALLS += 1
+    return payload
 
 
 def _sec_lookup_company(symbol: str) -> dict[str, Any] | None:
@@ -461,13 +511,92 @@ def _synthetic_snapshot(symbol: str) -> dict[str, Any]:
     }
 
 
-def get_sec_holder_snapshot(instrument: str, period: str = "recent") -> dict[str, Any]:
+def _sec13f_holder_snapshot(
+    symbol: str,
+    *,
+    period: str,
+    cusip: str = "",
+) -> dict[str, Any] | None:
+    sec13f = _sec13f_module()
+    resolution = sec13f.resolve_cusip(symbol, cusip)
+    if resolution is None:
+        return {
+            **_empty_snapshot(
+                symbol,
+                "sec_edgar",
+                "low",
+                "SEC 13F lookup needs a CUSIP. Enter one, or use a demo symbol with "
+                "a curated ticker-to-CUSIP mapping.",
+            ),
+            "cusip": None,
+            "sec_13f_lookup": "missing_cusip",
+        }
+
+    quarter = sec13f.period_to_quarter(period)
+    cache_key = sec13f.holder_cache_key(resolution.cusip, quarter)
+    cached = _cache_get("sec_13f", cache_key)
+    if isinstance(cached, dict) and isinstance(cached.get("rows"), list):
+        payload = cached
+    else:
+        label = f"13F structured data {quarter.key}"
+        payload = sec13f.get_13f_holder_rows(
+            resolution.cusip,
+            period=period,
+            user_agent=_sec_user_agent(),
+            fetch_bytes=lambda url: _sec_binary_call(cache_key, url, label),
+        )
+        if isinstance(payload, dict) and payload.get("rows"):
+            _cache_put("sec_13f", cache_key, payload)
+
+    rows = payload.get("rows", []) if isinstance(payload, dict) else []
+    if not rows:
+        if not (isinstance(payload, dict) and payload.get("dataset_loaded")):
+            return None
+        return {
+            **_empty_snapshot(
+                symbol,
+                "sec_edgar",
+                "low",
+                "SEC 13F structured-data lookup found no holder rows for "
+                f"CUSIP {resolution.cusip} in {quarter.key}; falling back for peer "
+                "assumptions.",
+            ),
+            "cusip": resolution.cusip,
+            "cusip_source": resolution.source,
+            "as_of": payload.get("period_end") if isinstance(payload, dict) else quarter.period_end,
+            "sec_13f_dataset": quarter.key,
+            "sec_13f_source_url": quarter.url,
+        }
+
+    snap = _snapshot_from_rows(
+        symbol,
+        rows,
+        source="sec_edgar",
+        confidence="medium",
+        notes=(
+            "SEC Form 13F structured data filtered by CUSIP "
+            f"{resolution.cusip} ({resolution.source}). 13F is free public holder "
+            "data, reported quarterly with a delay."
+        ),
+    )
+    snap["cusip"] = resolution.cusip
+    snap["cusip_source"] = resolution.source
+    snap["sec_13f_dataset"] = payload.get("dataset") if isinstance(payload, dict) else quarter.key
+    snap["sec_13f_source_url"] = (
+        payload.get("source_url") if isinstance(payload, dict) else quarter.url
+    )
+    return snap
+
+
+def get_sec_holder_snapshot(
+    instrument: str, period: str = "recent", cusip: str = ""
+) -> dict[str, Any]:
     """Best-effort SEC EDGAR issuer/holder snapshot for ``instrument``.
 
     No API key is required. Network access is opt-in via ``EGRESS_ENABLE_SEC_EDGAR``
-    or ``SEC_USER_AGENT`` and every request is cached/throttled. A missing holder
-    aggregation is an expected v1 outcome and is returned as an empty SEC snapshot,
-    not a failure.
+    or ``SEC_USER_AGENT`` and every request is cached/throttled. SEC 13F holder rows
+    are used when a CUSIP resolves; an issuer-only match is returned as lookup
+    evidence, not as peer crowding.
     """
     sym = _symbol(instrument)
     if not _sec_enabled():
@@ -479,8 +608,14 @@ def get_sec_holder_snapshot(instrument: str, period: str = "recent") -> dict[str
             "SEC_USER_AGENT to enable no-key public lookups.",
         )
 
+    sec13f_snapshot = _sec13f_holder_snapshot(sym, period=period, cusip=cusip)
+    if sec13f_snapshot and int(sec13f_snapshot.get("holder_count") or 0) > 0:
+        return sec13f_snapshot
+
     company = _sec_lookup_company(sym)
     if not company:
+        if sec13f_snapshot is not None:
+            return sec13f_snapshot
         return _empty_snapshot(sym, "none", "low", "SEC ticker lookup returned no match.")
 
     submissions = _sec_company_submissions(company["cik"])
@@ -521,15 +656,22 @@ def get_sec_holder_snapshot(instrument: str, period: str = "recent") -> dict[str
     dates = recent.get("filingDate") or []
     latest = dates[0] if dates else company.get("as_of")
     form_count = len(forms) if isinstance(forms, list) else 0
+    note = (
+        "SEC issuer identity resolved, but no free public holder rows were found "
+        "from the 13F structured-data lookup; falling back for peer assumptions."
+    )
+    if sec13f_snapshot and sec13f_snapshot.get("notes"):
+        note = f"{sec13f_snapshot['notes']} SEC issuer identity also resolved."
     return {
         **_empty_snapshot(
             sym,
             "sec_edgar",
             "low",
-            "SEC issuer identity resolved, but v1 did not find holder-concentration "
-            "rows from the free public endpoint; falling back for peer assumptions.",
+            note,
         ),
         "issuer": company,
+        "cusip": (sec13f_snapshot or {}).get("cusip"),
+        "cusip_source": (sec13f_snapshot or {}).get("cusip_source"),
         "as_of": latest,
         "recent_filing_count": form_count,
     }
@@ -670,6 +812,7 @@ def get_public_positioning_summary(
     period: str = "recent",
     source_mode: str = "auto",
     user_holdings_csv: str = "",
+    cusip: str = "",
 ) -> dict[str, Any]:
     """Return the selected positioning evidence, before RunConfig shaping."""
     sym = _symbol(instrument)
@@ -698,7 +841,7 @@ def get_public_positioning_summary(
 
     sec_snapshot = None
     if mode in {"auto", "sec_evidence"}:
-        sec_snapshot = get_sec_holder_snapshot(sym, period)
+        sec_snapshot = get_sec_holder_snapshot(sym, period, cusip=cusip)
         if sec_snapshot.get("holder_count", 0) > 0 or sec_snapshot.get("peer_crowding"):
             return {
                 "symbol": sym,
@@ -733,6 +876,7 @@ def get_peer_crowding_evidence(
     period: str = "recent",
     source_mode: str = "auto",
     user_holdings_csv: str = "",
+    cusip: str = "",
 ) -> dict[str, Any]:
     """Return a RunConfig-ready peer profile plus an evidence summary."""
     summary = get_public_positioning_summary(
@@ -740,6 +884,7 @@ def get_peer_crowding_evidence(
         period=period,
         source_mode=source_mode,
         user_holdings_csv=user_holdings_csv,
+        cusip=cusip,
     )
     snapshot = summary["snapshot"]
     sec_snapshot = summary.get("sec_snapshot")

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+import zipfile
+from io import BytesIO
 
 import mcp.positioning.data as pos
+import mcp.positioning.sec13f as sec13f
 import pytest
 from gateway.run_config import build_run_config
 from mcp.positioning.data import (
@@ -24,7 +27,42 @@ def _reset_positioning_state(monkeypatch):
     pos._SEC_RATE_LIMITED = False
     monkeypatch.delenv("EGRESS_ENABLE_SEC_EDGAR", raising=False)
     monkeypatch.delenv("SEC_USER_AGENT", raising=False)
+    monkeypatch.delenv("EGRESS_SEC13F_LOCAL_ZIP", raising=False)
+    monkeypatch.delenv("EGRESS_SEC13F_CACHE_DIR", raising=False)
     yield
+
+
+def _fake_13f_zip() -> bytes:
+    info = "\n".join(
+        [
+            "ACCESSION_NUMBER\tNAMEOFISSUER\tTITLEOFCLASS\tCUSIP\tVALUE\tSSHPRNAMT\tSSHPRNAMTTYPE\tPUTCALL",
+            "0001\tCARVANA CO\tCL A\t146869102\t12000\t1000000\tSH\t",
+            "0001\tCARVANA CO\tCL A\t146869102\t3000\t250000\tSH\t",
+            "0002\tCARVANA CO\tCL A\t146869102\t6000\t500000\tSH\t",
+            "0003\tSVB FINANCIAL GROUP\tCOM\t78486Q101\t2500\t100000\tSH\t",
+            "0004\tCARVANA CO\tCALL\t146869102\t1000\t10000\tSH\tCALL",
+            "0005\tCARVANA CO\tNOTE\t146869102\t1000\t50\tPRN\t",
+        ]
+    )
+    submissions = "\n".join(
+        [
+            "ACCESSION_NUMBER\tFILINGMANAGER_NAME\tCIK\tPERIODOFREPORT",
+            "0001\tAlpha Capital\t1000001\t20221231",
+            "0002\tBeta Partners\t1000002\t20221231",
+            "0003\tGamma Advisors\t1000003\t20230331",
+        ]
+    )
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("INFOTABLE.tsv", info)
+        zf.writestr("SUBMISSION.tsv", submissions)
+    return buf.getvalue()
+
+
+def _write_fake_13f_zip(tmp_path) -> str:
+    path = tmp_path / "2022q4_form13f.zip"
+    path.write_bytes(_fake_13f_zip())
+    return str(path)
 
 
 def test_positioning_tools_expose_spec_signatures() -> None:
@@ -66,11 +104,44 @@ AAPL,Other Fund,999,2024-03-31,0.1,0.1
     assert profile["confidence"] == "high"
 
 
+def test_sec13f_parser_filters_and_aggregates_holder_rows() -> None:
+    cvna = sec13f.holder_rows_from_zip(_fake_13f_zip(), "146869102")
+    assert [row["holder"] for row in cvna] == ["Alpha Capital", "Beta Partners"]
+    assert cvna[0]["shares"] == 1_250_000
+    assert cvna[0]["market_value"] == 15_000_000
+    assert cvna[0]["as_of"] == "2022-12-31"
+
+    sivb = sec13f.holder_rows_from_zip(_fake_13f_zip(), "78486Q101")
+    assert len(sivb) == 1
+    assert sivb[0]["holder"] == "Gamma Advisors"
+    assert sivb[0]["shares"] == 100_000
+
+
+def test_sec13f_fixture_can_drive_sec_peer_profile(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EGRESS_ENABLE_SEC_EDGAR", "true")
+    monkeypatch.setenv("EGRESS_SEC13F_LOCAL_ZIP", _write_fake_13f_zip(tmp_path))
+
+    def boom(_url: str):
+        raise AssertionError("issuer lookup should not run when 13F rows exist")
+
+    monkeypatch.setattr(pos, "_sec_get_json", boom)
+    evidence = get_peer_crowding_evidence("CVNA", source_mode="sec_evidence", period="2022-Q4")
+    profile = evidence["peer_crowding"]
+    snapshot = evidence["holder_snapshot"]
+    assert evidence["selected_source"] == "sec_edgar"
+    assert profile["peer_fund_count"] == 2
+    assert profile["evidence_source"] == "sec_edgar"
+    assert snapshot["cusip"] == "146869102"
+    assert snapshot["holder_count"] == 2
+    assert snapshot["total_shares"] == 1_750_000
+    assert "13F structured data" in profile["notes"]
+
+
 def test_curated_fixture_is_used_when_sec_has_no_holder_profile(monkeypatch) -> None:
     monkeypatch.setattr(
         pos,
         "get_sec_holder_snapshot",
-        lambda instrument, period="recent": {
+        lambda instrument, period="recent", cusip="": {
             "symbol": instrument,
             "source": "sec_edgar",
             "confidence": "low",
@@ -86,6 +157,38 @@ def test_curated_fixture_is_used_when_sec_has_no_holder_profile(monkeypatch) -> 
     assert evidence["selected_source"] == "curated_fixture"
     assert evidence["evidence_summary"]["items"][0]["source"] == "curated_fixture"
     assert evidence["evidence_summary"]["items"][1]["field"] == "sec_lookup"
+
+
+def test_sec_lookup_only_keeps_fallback_source_label(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EGRESS_ENABLE_SEC_EDGAR", "true")
+    monkeypatch.setenv("EGRESS_SEC13F_LOCAL_ZIP", _write_fake_13f_zip(tmp_path))
+    monkeypatch.setattr(
+        pos,
+        "_sec_lookup_company",
+        lambda symbol: {
+            "symbol": symbol,
+            "cik": "0001468691",
+            "name": "Carvana Co",
+            "as_of": "2026-06-14T00:00:00+00:00",
+        },
+    )
+    monkeypatch.setattr(pos, "_sec_company_submissions", lambda cik: {"payload": {}})
+
+    evidence = get_peer_crowding_evidence(
+        "CVNA",
+        source_mode="sec_evidence",
+        period="2022-Q4",
+        cusip="111111111",
+    )
+    assert evidence["selected_source"] == "curated_fixture"
+    assert evidence["peer_crowding"]["evidence_source"] == "curated_fixture"
+    assert evidence["holder_snapshot"]["source"] == "curated_fixture"
+    ledger = evidence["evidence_summary"]["items"]
+    assert ledger[0]["field"] == "peer_crowding"
+    assert ledger[0]["source"] == "curated_fixture"
+    assert ledger[1]["field"] == "sec_lookup"
+    assert ledger[1]["source"] == "sec_edgar"
+    assert "no holder rows" in ledger[1]["notes"]
 
 
 def test_sec_snapshot_is_disabled_by_default_and_never_calls_network(monkeypatch) -> None:
@@ -135,6 +238,7 @@ def test_sec_per_run_cap_blocks_network(monkeypatch, caplog) -> None:
 
 def test_sec_holder_rows_take_precedence_over_curated(monkeypatch) -> None:
     monkeypatch.setenv("EGRESS_ENABLE_SEC_EDGAR", "true")
+    monkeypatch.setattr(pos, "_sec13f_holder_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         pos,
         "_sec_lookup_company",

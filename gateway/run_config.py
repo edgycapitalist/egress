@@ -172,6 +172,7 @@ def build_run_config(
     * ``peer_source_mode`` str  — "assumption_led", "sec_evidence", "user_upload",
                                   "curated_fixture", or "auto" for positioning evidence
     * ``user_holdings_csv`` str — optional uploaded holdings CSV text
+    * ``cusip``           str   — optional CUSIP for free SEC 13F holder-row lookup
 
     ``live_data`` enables the real Alpha Vantage feed for the instrument. It defaults
     off so offline runs (tests, cached recordings, the discrimination harness) stay
@@ -242,13 +243,16 @@ def build_run_config(
         levers.get("peer_source_mode") or levers.get("positioning_source_mode") or ""
     ).strip()
     user_holdings_csv = str(levers.get("user_holdings_csv") or "").strip()
+    cusip = str(levers.get("cusip") or "").strip()
     normalized_peer_mode = peer_source_mode.replace("-", "_")
     explicit_peer_source = bool(
-        normalized_peer_mode or user_holdings_csv or levers.get("peer_crowding")
+        normalized_peer_mode or user_holdings_csv or cusip or levers.get("peer_crowding")
     )
     if not normalized_peer_mode:
         if user_holdings_csv:
             normalized_peer_mode = "user_upload"
+        elif cusip:
+            normalized_peer_mode = "sec_evidence"
         elif levers.get("peer_crowding"):
             normalized_peer_mode = "assumption_led"
         else:
@@ -259,6 +263,7 @@ def build_run_config(
             data["instrument"]["symbol"],
             source_mode=normalized_peer_mode,
             user_holdings_csv=user_holdings_csv,
+            cusip=cusip,
         )
         peer_profile = dict(positioning["peer_crowding"])
         if normalized_peer_mode == "assumption_led":

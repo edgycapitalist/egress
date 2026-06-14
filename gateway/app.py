@@ -100,6 +100,7 @@ def _cached_overlay_config_and_ensemble(
     replay_config = RunConfig.model_validate(raw_config)
     peer_levers: dict[str, Any] = {
         "symbol": replay_config.instrument.symbol,
+        "cusip": levers.get("cusip") or "",
         "user_holdings_csv": levers.get("user_holdings_csv") or "",
         "time_scale": levers.get("time_scale") or replay_config.time_scale.model_dump(),
     }
@@ -260,6 +261,7 @@ def positioning_evidence(payload: dict[str, Any]) -> dict[str, Any]:
         period=str(payload.get("period") or "recent"),
         source_mode=str(payload.get("peer_source_mode") or payload.get("source_mode") or "auto"),
         user_holdings_csv=str(payload.get("user_holdings_csv") or ""),
+        cusip=str(payload.get("cusip") or ""),
     )
 
 
