@@ -134,6 +134,26 @@ def instrument_reference(symbol: str, live: bool = False, period: str = "recent"
     }
 
 
+@app.post("/api/positioning")
+def positioning_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+    """Sourced peer-crowding inputs for an instrument.
+
+    This is the preview surface for Phase 4 positioning evidence. It uses the same
+    backend as ``build_run_config``: user CSV first, then opt-in SEC EDGAR, curated
+    fixtures, and synthetic assumptions. A sync def keeps any optional blocking
+    SEC call in FastAPI's worker thread rather than the event loop.
+    """
+    from mcp.positioning.data import get_peer_crowding_evidence
+
+    symbol = str(payload.get("symbol") or "CVNA")
+    return get_peer_crowding_evidence(
+        symbol,
+        period=str(payload.get("period") or "recent"),
+        source_mode=str(payload.get("peer_source_mode") or payload.get("source_mode") or "auto"),
+        user_holdings_csv=str(payload.get("user_holdings_csv") or ""),
+    )
+
+
 def _gemini_enabled() -> bool:
     """True only when a live Gemini run is both requested-capable and configured."""
     if os.getenv("EGRESS_LIVE_GEMINI", "").lower() not in {"1", "true", "yes"}:

@@ -175,3 +175,26 @@ def test_instrument_endpoint_reports_source() -> None:
     assert other["reference_price"] > 0 and other["adv"] > 0
     assert other["realized_vol_daily"] >= 0
     assert other["source"] in {"alphavantage", "synthetic"}
+
+
+def test_positioning_endpoint_reports_peer_evidence() -> None:
+    client = TestClient(app)
+    body = client.post(
+        "/api/positioning",
+        json={"symbol": "CVNA", "peer_source_mode": "assumption_led"},
+    ).json()
+    assert body["selected_source"] == "synthetic_assumption"
+    assert body["peer_crowding"]["peer_fund_count"] > 0
+    assert body["evidence_summary"]["items"][0]["source"] == "synthetic_assumption"
+
+    csv_text = "symbol,manager,shares\nCVNA,Alpha Fund,1000000\nCVNA,Beta Fund,500000\n"
+    uploaded = client.post(
+        "/api/positioning",
+        json={
+            "symbol": "CVNA",
+            "peer_source_mode": "user_upload",
+            "user_holdings_csv": csv_text,
+        },
+    ).json()
+    assert uploaded["selected_source"] == "user_upload"
+    assert uploaded["peer_crowding"]["peer_fund_count"] == 2
