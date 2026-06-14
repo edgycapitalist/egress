@@ -75,6 +75,7 @@ def frames_from_replay(
     batch_size: int = DEFAULT_BATCH,
     analysis: str | None = None,
     ensemble: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield the ordered WebSocket frames for one recorded run.
 
@@ -83,7 +84,7 @@ def frames_from_replay(
     * ``meta``     — the run config + schema version + ``source`` label
     * ``ticks``    — a batch of TickEvents (repeated; batched per ``batch_size``)
     * ``metrics``  — the final Metrics
-    * ``ensemble`` — optional EnsembleResult summary for live deterministic ensembles
+    * ``ensemble`` — optional EnsembleResult summary for deterministic ensembles
     * ``analysis`` — the plain-language narrative (sidecar for cached, orchestrator
       output for live)
     * ``done``     — terminal marker
@@ -96,7 +97,7 @@ def frames_from_replay(
         "type": "meta",
         "source": source,
         "schema_version": meta.get("schema_version"),
-        "config": meta.get("config"),
+        "config": config if config is not None else meta.get("config"),
         "total_ticks": len(ticks),
     }
     for group in batch(ticks, batch_size):

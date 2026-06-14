@@ -29,6 +29,14 @@ from pathlib import Path
 from typing import Any
 
 from engine.scenarios import flagship_scenario
+from engine.schema import (
+    EnsembleCaseSummary,
+    EnsembleResult,
+    EvidenceSummary,
+    MetricBand,
+    Metrics,
+    RunConfig,
+)
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -56,6 +64,104 @@ def _cached_replay_for(symbol: str | None) -> Path:
             return candidate
     default = REPLAY_DIR / "cvna.ndjson"
     return default if default.exists() else FLAGSHIP_REPLAY
+
+
+def _merge_evidence(
+    current: EvidenceSummary | None, incoming: EvidenceSummary | None
+) -> EvidenceSummary | None:
+    if incoming is None:
+        return current
+    if current is None:
+        return incoming
+    return EvidenceSummary(
+        summary=" ".join(
+            part
+            for part in (current.summary.strip(), incoming.summary.strip())
+            if part
+        ),
+        items=[*current.items, *incoming.items],
+    )
+
+
+def _flat_band(value: float | int | None) -> MetricBand:
+    val = round(float(value or 0.0), 6)
+    return MetricBand(low=val, median=val, high=val)
+
+
+def _cached_overlay_config_and_ensemble(
+    replay_file: Path, levers: dict[str, Any]
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Add the v0.4 evidence envelope to a committed replay without rewriting it."""
+    meta, _ticks, metrics_raw = read_records(replay_file)
+    raw_config = meta.get("config")
+    if not isinstance(raw_config, dict) or not isinstance(metrics_raw, dict):
+        return None, None
+
+    replay_config = RunConfig.model_validate(raw_config)
+    peer_levers: dict[str, Any] = {
+        "symbol": replay_config.instrument.symbol,
+        "peer_source_mode": levers.get("peer_source_mode") or "auto",
+        "user_holdings_csv": levers.get("user_holdings_csv") or "",
+        "time_scale": levers.get("time_scale") or replay_config.time_scale.model_dump(),
+    }
+    if levers.get("peer_crowding") is not None:
+        peer_levers["peer_crowding"] = levers["peer_crowding"]
+    if levers.get("exit_horizon_ticks") is not None:
+        peer_levers["exit_horizon_ticks"] = levers["exit_horizon_ticks"]
+    if levers.get("exit_horizon_hours") is not None:
+        peer_levers["exit_horizon_hours"] = levers["exit_horizon_hours"]
+    if levers.get("exit_horizon_days") is not None:
+        peer_levers["exit_horizon_days"] = levers["exit_horizon_days"]
+
+    evidence_config = build_run_config(peer_levers, live_data=False)
+    config = replay_config.model_copy(
+        deep=True,
+        update={
+            "peer_crowding": evidence_config.peer_crowding,
+            "time_scale": evidence_config.time_scale,
+            "scenario_mode": "historical_saved",
+            "evidence_summary": _merge_evidence(
+                replay_config.evidence_summary,
+                evidence_config.evidence_summary,
+            ),
+        },
+    )
+    metrics = Metrics.model_validate(metrics_raw)
+    ensemble_metrics = metrics.model_copy(
+        update={"ensemble_case": "base", "ensemble_seed": replay_config.seed}
+    )
+    representative_ref = str(replay_file)
+    ensemble = EnsembleResult(
+        run_id=f"{replay_config.run_id}-cached-ensemble",
+        cases=[
+            EnsembleCaseSummary(
+                case="base",
+                seeds=[replay_config.seed],
+                peer_crowding=config.peer_crowding,
+                metrics=ensemble_metrics,
+                representative_replay_ref=representative_ref,
+            )
+        ],
+        bands={
+            "fill_rate": _flat_band(metrics.fill_rate),
+            "pct_stuck": _flat_band(metrics.pct_stuck),
+            "slippage_bps": _flat_band(metrics.slippage_bps),
+            "implementation_shortfall_bps": _flat_band(
+                metrics.implementation_shortfall_bps
+            ),
+            "max_drawdown_pct": _flat_band(metrics.max_drawdown_pct),
+            "time_to_exit_ticks": _flat_band(
+                metrics.time_to_exit_ticks
+                if metrics.time_to_exit_ticks is not None
+                else metrics.ticks_run
+            ),
+            "halt_probability": _flat_band(1.0 if metrics.halt_triggered else 0.0),
+        },
+        representative_case="base",
+        representative_replay_ref=representative_ref,
+        evidence_summary=config.evidence_summary,
+    )
+    return config.model_dump(), ensemble.model_dump()
 
 # Demo pacing: ms of dwell between successive tick batches so the cascade animates.
 DEFAULT_PACE_MS = int(os.getenv("EGRESS_PACE_MS", "110"))
@@ -292,7 +398,8 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         if not replay_file.exists():
             await ws.send_json({"type": "error", "message": "Flagship replay not found."})
             return
-        replay_path, source, analysis, ensemble = str(replay_file), "cached", None, None
+        cached_config, ensemble = _cached_overlay_config_and_ensemble(replay_file, levers)
+        replay_path, source, analysis = str(replay_file), "cached", None
 
     for frame in frames_from_replay(
         replay_path,
@@ -300,6 +407,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         batch_size=batch_size,
         analysis=analysis,
         ensemble=ensemble,
+        config=cached_config if source == "cached" else None,
     ):
         await ws.send_json(frame)
         # Pace the ticks for the animation; give the trailing frames (metrics /

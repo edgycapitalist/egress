@@ -203,26 +203,34 @@ def build_run_config(
         levers.get("peer_source_mode") or levers.get("positioning_source_mode") or ""
     ).strip()
     user_holdings_csv = str(levers.get("user_holdings_csv") or "").strip()
-    if peer_source_mode or user_holdings_csv:
-        positioning = get_peer_crowding_evidence(
-            data["instrument"]["symbol"],
-            source_mode=peer_source_mode or "auto",
-            user_holdings_csv=user_holdings_csv,
+    normalized_peer_mode = peer_source_mode.replace("-", "_")
+    if not normalized_peer_mode:
+        if user_holdings_csv:
+            normalized_peer_mode = "user_upload"
+        elif levers.get("peer_crowding"):
+            normalized_peer_mode = "assumption_led"
+        else:
+            normalized_peer_mode = "auto"
+
+    positioning = get_peer_crowding_evidence(
+        data["instrument"]["symbol"],
+        source_mode=normalized_peer_mode,
+        user_holdings_csv=user_holdings_csv,
+    )
+    peer_profile = dict(positioning["peer_crowding"])
+    if normalized_peer_mode == "assumption_led":
+        peer_profile = _assumption_profile_from_levers(
+            peer_profile, levers.get("peer_crowding")
         )
-        peer_profile = dict(positioning["peer_crowding"])
-        if peer_source_mode.replace("-", "_") == "assumption_led":
-            peer_profile = _assumption_profile_from_levers(
-                peer_profile, levers.get("peer_crowding")
-            )
-        data["peer_crowding"] = peer_profile
-        data["scenario_mode"] = _scenario_mode_for_peer_source(
-            positioning.get("selected_source"), peer_source_mode
-        )
-        data["evidence_summary"] = _merge_evidence_summary(
-            data.get("evidence_summary"), positioning.get("evidence_summary")
-        )
-    elif levers.get("peer_crowding"):
-        data["peer_crowding"] = dict(levers["peer_crowding"])
+    data["peer_crowding"] = peer_profile
+    data["scenario_mode"] = _scenario_mode_for_peer_source(
+        positioning.get("selected_source"), normalized_peer_mode
+    )
+    if normalized_peer_mode == "auto" and not live_data:
+        data["scenario_mode"] = "assumption_led"
+    data["evidence_summary"] = _merge_evidence_summary(
+        data.get("evidence_summary"), positioning.get("evidence_summary")
+    )
 
     time_scale = dict(data.get("time_scale") or {})
     if levers.get("time_scale"):
@@ -278,5 +286,18 @@ def scenario_prompt(levers: dict[str, Any] | None) -> str:
         f"source {news.get('source')}). Schedule shocks whose severity and number match "
         f"this intensity; a high intensity means severe, repeated shocks and thin support."
     )
-    body = "\n\n".join(p for p in (text, spec, crisis) if p)
+    peer = cfg.peer_crowding
+    evidence = cfg.evidence_summary
+    peer_note = ""
+    if peer is not None:
+        peer_note = (
+            "Peer-crowding evidence: "
+            f"source {peer.evidence_source}, confidence {peer.confidence}, "
+            f"{peer.peer_fund_count} similar holders/funds, overlap {peer.overlap_pct:.0%}, "
+            f"average peer position {peer.avg_peer_position_pct_adv:.1%} of ADV, "
+            f"correlated exit probability {peer.correlated_exit_probability:.0%}. "
+            f"Notes: {peer.notes or 'none'}. "
+            f"Evidence ledger: {(evidence.summary if evidence else '').strip() or 'none'}"
+        )
+    body = "\n\n".join(p for p in (text, spec, peer_note, crisis) if p)
     return re.sub(r"[ \t]+", " ", body).strip()

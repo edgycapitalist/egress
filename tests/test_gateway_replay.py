@@ -35,7 +35,7 @@ def test_frames_order_and_batching() -> None:
     assert kinds[0] == "meta"
     assert kinds[-1] == "done"
     assert "metrics" in kinds and "analysis" in kinds  # sidecar narrative present
-    assert "ensemble" not in kinds  # cached replay mode remains a single recorded path
+    assert "ensemble" not in kinds  # the gateway adds cached ensemble metadata explicitly
     # Every tick is delivered exactly once across the batches.
     _, ticks, _ = read_records(FLAGSHIP)
     streamed = [t for f in frames if f["type"] == "ticks" for t in f["ticks"]]
@@ -62,10 +62,13 @@ def test_cached_websocket_run_offline() -> None:
         while meta["type"] == "status":
             meta = ws.receive_json()
         assert meta["type"] == "meta" and meta["source"] == "cached"
+        assert meta["config"]["peer_crowding"] is not None
+        assert meta["config"]["evidence_summary"] is not None
         symbol = meta["config"]["instrument"]["symbol"]
 
         ticks: list[dict] = []
         analysis = None
+        ensemble = None
         metrics = None
         while True:
             frame = ws.receive_json()
@@ -73,6 +76,8 @@ def test_cached_websocket_run_offline() -> None:
                 ticks.extend(frame["ticks"])
             elif frame["type"] == "metrics":
                 metrics = frame["metrics"]
+            elif frame["type"] == "ensemble":
+                ensemble = frame["ensemble"]
             elif frame["type"] == "analysis":
                 analysis = frame["analysis"]
             elif frame["type"] == "done":
@@ -82,6 +87,8 @@ def test_cached_websocket_run_offline() -> None:
 
     assert ticks, "expected tick frames"
     assert metrics and 0.0 <= metrics["fill_rate"] <= 1.0
+    assert ensemble and ensemble["type"] == "ensemble"
+    assert ensemble["evidence_summary"] is not None
     assert analysis and symbol in analysis  # the analyst names the replay's instrument
 
 
@@ -132,6 +139,8 @@ def test_build_run_config_labels_instrument_evidence() -> None:
     assert cfg.evidence_summary is not None
     assert cfg.evidence_summary.items[0].field == "instrument"
     assert cfg.evidence_summary.items[0].source == "curated_fixture"
+    assert cfg.peer_crowding is not None
+    assert any(item.field == "peer_crowding" for item in cfg.evidence_summary.items)
 
 
 def test_build_run_config_applies_population_size() -> None:
