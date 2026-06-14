@@ -3,7 +3,7 @@
 # costs nothing and needs no cloud credentials.
 
 .DEFAULT_GOAL := help
-.PHONY: help init start stop restart demo demo-agents demo-live auth-check gateway web web-install web-build test lint fmt build eval deploy check-prereqs
+.PHONY: help init start stop restart demo demo-agents demo-live auth-check gateway positioning-mcp web web-install web-build test lint fmt build eval deploy check-prereqs
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -39,6 +39,9 @@ auth-check: ## Confirm Gemini works through Vertex AI (needs ADC + project; one 
 gateway: ## Run the FastAPI gateway (WebSocket hub at /ws/run) on :8000
 	$(PYTHON) -m gateway
 
+positioning-mcp: ## Run the Positioning MCP server (SEC/user/curated/synthetic evidence)
+	$(PYTHON) mcp/positioning/server.py
+
 web-install: ## Install the frontend's npm dependencies
 	cd web && npm install
 
@@ -61,6 +64,7 @@ build: ## Build all service container images
 	docker build --target engine          -t egress-engine .
 	docker build --target market_data_mcp -t egress-market-data-mcp .
 	docker build --target news_mcp        -t egress-news-mcp .
+	docker build --target positioning_mcp -t egress-positioning-mcp .
 	docker build --target gateway         -t egress-gateway .
 
 eval: ## Run the calibration backtest against the real CVNA 2022 episode (offline, no LLM)

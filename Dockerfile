@@ -2,6 +2,7 @@
 #   docker build --target engine          -t egress-engine .
 #   docker build --target market_data_mcp -t egress-market-data-mcp .
 #   docker build --target news_mcp        -t egress-news-mcp .
+#   docker build --target positioning_mcp -t egress-positioning-mcp .
 #   docker build --target gateway         -t egress-gateway .
 #
 # Service entrypoints are wired in their respective phases (engine = Phase 1,
@@ -39,6 +40,14 @@ COPY mcp/ ./mcp/
 RUN pip install ".[mcp]"
 EXPOSE 8102
 CMD ["python", "-m", "mcp.news.server"]
+
+# ---- Positioning MCP server — Phase 4 ----
+FROM base AS positioning_mcp
+COPY engine/ ./engine/
+COPY mcp/ ./mcp/
+RUN pip install ".[mcp,data]"
+EXPOSE 8103
+CMD ["python", "mcp/positioning/server.py"]
 
 # ---- Gateway / BFF (FastAPI, WebSocket hub, A2A) — Phase 3 ----
 # The gateway streams the cached NDJSON replay and exposes /api/instrument via the

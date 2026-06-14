@@ -207,6 +207,13 @@ export interface Levers {
   population_size: number;
   exit_speed: string;
   crowding_mix: Record<InvestorType, number>;
+  peer_source_mode?: "auto" | "assumption_led" | "sec_evidence" | "user_upload" | "curated_fixture";
+  peer_crowding?: Partial<PeerCrowdingProfile>;
+  user_holdings_csv?: string;
+  time_scale?: Partial<TimeScale>;
+  exit_horizon_ticks?: number;
+  exit_horizon_hours?: number;
+  exit_horizon_days?: number;
   seed?: number;
 }
 

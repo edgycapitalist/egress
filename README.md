@@ -120,7 +120,7 @@ To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_
 | --- | --- |
 | Simulation engine | Python 3.13, NumPy, Pydantic. No LLM, no cloud. |
 | Agent orchestration | Google ADK (`SequentialAgent`, `ParallelAgent`, `LoopAgent`), Gemini via Vertex AI. |
-| External data | Two MCP servers over the Model Context Protocol — Alpha Vantage **daily bars** (market data) and **news headlines**. Daily only; no intraday or order-book/Level 2 feed. |
+| External data | Three MCP servers over the Model Context Protocol — Alpha Vantage **daily bars** (market data), Alpha Vantage **news headlines**, and free **positioning evidence** (user CSV, opt-in SEC EDGAR, curated fixtures, synthetic fallback). Daily only; no intraday or order-book/Level 2 feed. |
 | Gateway / BFF | FastAPI, WebSocket streaming of tick telemetry. |
 | Frontend | Next.js 15, React 19, shadcn/ui, Tailwind CSS. |
 | Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is provisioned for a planned tick-state layer and is not yet used in code. |
@@ -131,16 +131,26 @@ See [`AGENTS.md`](./AGENTS.md) for the full build specification and [`docs/contr
 
 The market-data MCP server calls one Alpha Vantage endpoint — `TIME_SERIES_DAILY` with `outputsize=compact` — when `ALPHAVANTAGE_API_KEY` is set. From those daily bars it derives three real numbers: the **reference price**, the **average daily volume** (mean of recent volume), and the **daily realized volatility** (standard deviation of daily returns). Real calls are budgeted for the free tier — at most a few per run and `25`/day by default, throttled, with an immediate synthetic fallback when a limit is hit — so a run never exhausts the quota.
 
+The positioning MCP server adds free peer-crowding inputs. It uses this precedence:
+**user-uploaded holdings CSV** first, then opt-in **SEC EDGAR** public JSON lookups
+(`EGRESS_ENABLE_SEC_EDGAR=true` plus a descriptive `SEC_USER_AGENT`), then curated
+historical episode fixtures, then deterministic synthetic assumptions. SEC calls do
+not require an API key; they are cached in Postgres and throttled below SEC's
+published fair-access ceiling. The v1 SEC path is conservative: it records issuer
+identity / available holder rows when present, but it does not claim a paid-grade
+all-holder aggregation feed.
+
 What is **not** real data, stated plainly:
 
 - **Free float is a proxy, not a feed.** It is not on the free tier, so the server estimates it as `adv × 30` (`mcp/market_data/data.py`). Treat it as a rough scale, not a real figure.
-- **The crowd composition and the position size are user-set.** The crowding mix and position size come from the UI sliders / scenario, not from any ownership, 13F, short-interest, or positioning data — there is no such data source in the system.
+- **The behavioral crowd composition and the position size are user-set.** The six-type `crowding_mix` and the position size come from the UI sliders / scenario. The separate `peer_crowding` profile can now come from user CSV, SEC/public evidence when available, curated fixtures, or synthetic assumptions, and the run labels which source was used.
+- **There is no paid holder, short-interest, prime-broker, securities-lending, or Level 2 positioning feed.** SEC EDGAR is free public data and useful for evidence labels and any rows the parser can read; when it cannot produce a holder profile, the system falls back to curated or assumption-led peer-crowding cases and says so.
 - **There is no order-book / Level 2 feed.** The book's depth is built from the simulated agent population: each agent's quote size (`size_base`) and holdings scale with the instrument's real ADV (`liq_unit = adv / population_size`) and are capped by free float (`engine/population/population.py`). Real ADV sets the *scale* of depth; the depth itself is synthesized, not observed.
 - **Free-tier history is ~100 days.** `outputsize=full` is premium, so historical crisis windows (CVNA late-2022, SVB March-2023) cannot be fetched. **Cached** mode therefore replays committed recordings of those episodes (a historical *reference*), while a **live** run uses the instrument's current ~100-day data and does **not** reproduce the historical crisis.
 
 The news MCP server calls `NEWS_SENTIMENT` for real headlines, used only by the live Gemini archetypes; it falls back to a deterministic synthetic crisis tape otherwise.
 
-When no key is present (or a call is rate-limited or errors), every feed falls back to a **deterministic synthetic** version — a NumPy random walk seeded by the symbol — so `make test`, `make demo`, and `make demo-agents` run fully offline and reproducibly with no credentials.
+When no key is present, SEC is disabled, or a call is rate-limited/errors, every feed falls back to a **deterministic synthetic** version — seeded by the symbol — so `make test`, `make demo`, and `make demo-agents` run fully offline and reproducibly with no credentials.
 
 ## License
 

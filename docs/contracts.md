@@ -177,8 +177,10 @@ fields for product-accuracy remediation. Old configs parse with `peer_crowding =
 null`, a `time_scale` of `100` ticks per ADV session, `scenario_mode =
 "historical_saved"`, and no evidence summary. Phase 2 wires `peer_crowding` into
 deterministic peer-fund cohorts and `time_scale` into the exit horizon and
-ADV-per-tick natural volume. Later phases add ensemble envelopes, SEC/user
-positioning evidence, and frontend evidence labels.
+ADV-per-tick natural volume. Phase 3 adds ensemble envelopes. Phase 4 adds
+`mcp/positioning`, which can fill `peer_crowding` and `evidence_summary` from
+user-uploaded holdings CSV, opt-in SEC EDGAR public data, curated fixtures, or
+synthetic assumptions while preserving old replay compatibility.
 
 ---
 
@@ -426,4 +428,4 @@ version so an old recording is always interpretable.
 | `0.1.0` | 2026-06-11 | Initial boundary: `RunConfig`, `Stance`, `MarketState`, `TickEvent`, `Metrics`, NDJSON record, and the `session.state` keys. |
 | `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |
 | `0.3.0` | 2026-06-13 | Added `crisis_intensity` (optional, defaults to `1.0`). Crisis magnitude is now decoupled from trailing volatility: volatility is a floored fragility amplifier, not a gate, so a severe enough crisis can close even a calm, deep name while a mild one leaves it open. The live path derives the intensity from the stress text + real news sentiment. Backward-compatible — an omitted `crisis_intensity` reproduces v0.2.0 behaviour. |
-| `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. Phase 2 wired peer cohorts/time scale into engine behavior, and Phase 3 streams deterministic low/base/high ensemble summaries through the gateway while preserving cached replays. |
+| `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. Phase 2 wired peer cohorts/time scale into engine behavior, Phase 3 streams deterministic low/base/high ensemble summaries through the gateway while preserving cached replays, and Phase 4 fills peer-crowding/evidence fields through the free Positioning MCP without changing the schema. |

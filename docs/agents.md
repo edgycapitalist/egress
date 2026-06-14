@@ -71,29 +71,41 @@ testable. A malformed or missing stance (an LLM hiccup) falls back to the
 deterministic baseline for that type, so a bad model output can never crash the
 engine or stall the run.
 
-## The two MCP servers
+## The MCP servers
 
-`mcp/market_data` and `mcp/news` each expose their spec tool signatures two ways:
+`mcp/market_data`, `mcp/news`, and `mcp/positioning` expose their spec tool
+signatures two ways:
 
 - **In-process `FunctionTool`s** (`tools.py`) — the path the agents use today.
   No running server, no cloud, fully offline and unit-tested (`tools.py` wraps the
   backend in `data.py`).
 - **FastMCP servers** (`server.py`) — the deployment surface, run as a path script.
 
-### Data backends — real feed with a synthetic fallback
+### Data backends — free/real feed with synthetic fallback
 
-Each `data.py` is two-layered. With `ALPHAVANTAGE_API_KEY` set it serves **real
-Alpha Vantage data** — `TIME_SERIES_DAILY` for OHLCV + reference, `NEWS_SENTIMENT`
-for real headlines and per-article sentiment. Every response is cached in Postgres
-(plus an in-process memo) keyed by symbol+period, so a run makes at most a few real
-calls and every repeat run is served entirely from cache — essential on the free
-~25-calls/day tier. A hard budget guard caps real calls per run, tracks the running
-`N/25` daily total in a shared `mcp_api_usage` table, logs each real call, and on
-the daily limit or a rate-limit envelope **falls back to the synthesiser and never
-crashes**. With **no key** (the offline test suite and the deterministic baseline)
-the synthesiser serves everything with zero network — so the suite stays green and
-free. `get_sentiment(text)` stays a lexicon scorer: Alpha Vantage scores tickers,
-not the arbitrary text this tool is given.
+The market-data and news backends are two-layered. With `ALPHAVANTAGE_API_KEY`
+set they serve **real Alpha Vantage data** — `TIME_SERIES_DAILY` for OHLCV +
+reference, `NEWS_SENTIMENT` for real headlines and per-article sentiment. Every
+response is cached in Postgres (plus an in-process memo) keyed by symbol+period,
+so a run makes at most a few real calls and every repeat run is served entirely
+from cache — essential on the free ~25-calls/day tier. A hard budget guard caps
+real calls per run, tracks the running `N/25` daily total in a shared
+`mcp_api_usage` table, logs each real call, and on the daily limit or a
+rate-limit envelope **falls back to the synthesiser and never crashes**. With
+**no key** (the offline test suite and the deterministic baseline) the
+synthesiser serves everything with zero network — so the suite stays green and
+free. `get_sentiment(text)` stays a lexicon scorer: Alpha Vantage scores
+tickers, not the arbitrary text this tool is given.
+
+The positioning backend has no paid feed. It accepts user holdings CSV, can
+optionally query SEC EDGAR public JSON endpoints without an API key
+(`EGRESS_ENABLE_SEC_EDGAR=true` plus `SEC_USER_AGENT`), then falls back to
+curated historical fixtures and deterministic synthetic assumptions. SEC calls
+are cached in the same `mcp_cache` table and throttled below SEC's
+10-requests/second fair-access guidance. The v1 SEC path is intentionally
+conservative: if it can resolve issuer identity but not holder-concentration
+rows, it records that SEC evidence and falls back for the peer-crowding profile
+instead of pretending the missing data was observed.
 
 ### Name-collision note
 

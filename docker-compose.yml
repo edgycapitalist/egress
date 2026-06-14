@@ -62,6 +62,12 @@ volumes:
 #    env_file: .env
 #    ports: ["8102:8102"]
 #
+#  positioning_mcp:         # Phase 4 — Positioning MCP server
+#    build: { context: ., dockerfile: Dockerfile, target: positioning_mcp }
+#    env_file: .env
+#    ports: ["8103:8103"]
+#    depends_on: { postgres: { condition: service_healthy } }
+#
 #  gateway:                 # Phase 3 — FastAPI gateway / BFF (WebSocket + A2A)
 #    build: { context: ., dockerfile: Dockerfile, target: gateway }
 #    env_file: .env
