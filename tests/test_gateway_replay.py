@@ -109,7 +109,15 @@ def test_build_run_config_applies_levers() -> None:
     assert abs(sum(mix.values()) - 1.0) < 1e-6
     assert mix["forced_seller"] == 0.5 and mix["holder"] == 0.0
     assert cfg.run_id.startswith("run-")
+    assert cfg.scenario_mode == "assumption_led"
     assert json.loads(cfg.model_dump_json())  # serialisable for the wire
+
+
+def test_build_run_config_labels_instrument_evidence() -> None:
+    cfg = build_run_config({"symbol": "CVNA"})
+    assert cfg.evidence_summary is not None
+    assert cfg.evidence_summary.items[0].field == "instrument"
+    assert cfg.evidence_summary.items[0].source == "curated_fixture"
 
 
 def test_build_run_config_applies_population_size() -> None:

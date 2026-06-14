@@ -27,6 +27,22 @@ DEFAULT_TICKS_PER_WINDOW = 10
 _HALT_BAND_BY_TIER: dict[int, float] = {1: 0.10, 2: 0.20, 3: 0.30}
 
 
+def _evidence_source(source: str | None) -> str:
+    if source == "alphavantage":
+        return "alpha_vantage"
+    if source == "curated":
+        return "curated_fixture"
+    if source == "synthetic":
+        return "synthetic_assumption"
+    return "none"
+
+
+def _confidence_for_source(source: str | None) -> str:
+    if source in {"alphavantage", "curated"}:
+        return "high"
+    return "low"
+
+
 # NOTE: these models are sent to Vertex as LLM ``output_schema``s. Two constraints
 # shape them: (1) Vertex's schema dialect is a restricted subset of JSON Schema and
 # rejects ``exclusiveMinimum`` (what Pydantic ``gt`` emits); (2) ADK validates the
@@ -102,6 +118,7 @@ def build_run_config(
 
     reference = get_instrument_reference(draft.symbol)
     ref_price = reference["reference_price"]
+    source = str(reference.get("source") or "")
 
     # Clamp the drift-prone scalars into legal ranges. The model schema is permissive
     # (see the note above the draft models); these clamps are where the real bounds
@@ -149,5 +166,21 @@ def build_run_config(
         max_ticks=max_ticks,
         ticks_per_window=ticks_per_window,
         baseline_mode=baseline_mode,
+        scenario_mode="live_current",
+        evidence_summary={
+            "summary": f"Instrument reference resolved from {source or 'unknown'} data.",
+            "items": [
+                {
+                    "field": "instrument",
+                    "source": _evidence_source(source),
+                    "confidence": _confidence_for_source(source),
+                    "label": reference["symbol"],
+                    "notes": (
+                        "Scenario author resolved the symbol through the market-data "
+                        "tooling before validation."
+                    ),
+                }
+            ],
+        },
     )
     return config, reference

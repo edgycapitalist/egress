@@ -96,6 +96,41 @@ run starts). Consumed by engine setup and by the archetype agents.
   "max_ticks": 600,                // hard cap on run length
   "ticks_per_window": 10,          // k: how often stances refresh
   "baseline_mode": true,           // true = fixed-heuristic stances, zero LLM calls
+  "peer_crowding": {               // optional; separate from behavioural crowding_mix
+    "case": "base",                // "low" | "base" | "high" | "custom"
+    "peer_fund_count": 12,
+    "overlap_pct": 0.42,
+    "avg_peer_position_pct_adv": 0.08,
+    "shared_trigger_drawdown_pct": 0.12,
+    "correlated_exit_probability": 0.70,
+    "leverage_sensitivity": 0.50,
+    "redemption_pressure": 0.40,
+    "etf_flow_pressure": 0.20,
+    "evidence_source": "sec_edgar",
+    "confidence": "medium",
+    "notes": "13F-derived overlap proxy"
+  },
+  "time_scale": {                  // optional; defaults preserve the current convention
+    "tick_duration_seconds": 234.0,
+    "session_ticks": 100,
+    "exit_horizon_ticks": null,
+    "exit_horizon_hours": null,
+    "exit_horizon_days": null
+  },
+  "scenario_mode": "historical_saved",
+  "evidence_summary": {
+    "summary": "SEC-derived peer-crowding assumptions.",
+    "items": [
+      {
+        "field": "peer_crowding",
+        "source": "sec_edgar",
+        "confidence": "medium",
+        "label": "13F snapshot",
+        "as_of": null,
+        "notes": ""
+      }
+    ]
+  },
   "crisis_intensity": 1.0          // crisis magnitude; 1.0 = neutral (omit = default)
 }
 ```
@@ -110,6 +145,9 @@ run starts). Consumed by engine setup and by the archetype agents.
 - `instrument.tick_size > 0`, `reference_price > 0`, `volatility > 0`.
 - Every `shock_schedule[i].tick` is in `[0, max_ticks)`; `severity` in `[0, 1]`.
 - `crisis_intensity ≥ 0` (optional; defaults to `1.0`, the neutral baseline).
+- `peer_crowding` fields are optional as a group; when present, count fields are
+  non-negative and probability/pressure/drawdown fields are fractions in `[0, 1]`.
+- `time_scale` defaults to `100` ticks per ADV session and `234` seconds per tick.
 
 **Liquidity semantics (v0.2.0).** The engine consumes the real instrument data so a
 run tracks the name, not just the scenario: resting book depth and per-agent order
@@ -130,6 +168,14 @@ baseline and reproduces v0.2.0 exactly. The live gateway derives it deterministi
 from the user's stress text and the instrument's real news sentiment
 (`gateway/crisis.py`), so the description genuinely drives the outcome; the discrimination
 harness pins a fixed *moderate* intensity across all names (no per-episode tuning).
+
+**Product-accuracy metadata (v0.4.0).** `peer_crowding`, `time_scale`,
+`scenario_mode`, and `evidence_summary` are metadata and assumption-contract fields
+for the product-accuracy remediation work. In v0.4.0 they are backward-compatible:
+old configs parse with `peer_crowding = null`, a `time_scale` of `100` ticks per
+ADV session, `scenario_mode = "historical_saved"`, and no evidence summary. Later
+phases wire these fields into deterministic peer cohorts, ensemble runs, SEC/user
+positioning evidence, and frontend evidence labels.
 
 ---
 
@@ -206,6 +252,17 @@ stances, and by the analyst at the end.
     "forced_seller": 320, "panic_seller": 210, "trend_follower": 180,
     "bargain_hunter": 40, "market_maker": 12, "holder": 3
   },
+  "peer_actions": {                // defaults to zero until peer cohorts are wired
+    "triggered_funds": 0,
+    "liquidating_funds": 0,
+    "shares_sold": 0,
+    "shares_remaining": 0
+  },
+  "impact_attribution": {          // bps; defaults to zero for old replays
+    "exogenous_shock_bps": 0.0,
+    "endogenous_trading_bps": 0.0,
+    "liquidity_withdrawal_bps": 0.0
+  },
   "halted": false,
   "halt_started": false,           // true on the tick a halt begins
   "shock_applied": null            // or the shock_schedule entry applied this tick
@@ -234,7 +291,14 @@ writes the outcome to memory).
   "time_to_exit_ticks": null,           // null if never fully exited
   "halt_triggered": true,
   "halt_count": 2,
-  "ticks_run": 600
+  "ticks_run": 600,
+  "impact_attribution": {
+    "exogenous_shock_bps": 0.0,
+    "endogenous_trading_bps": 0.0,
+    "liquidity_withdrawal_bps": 0.0
+  },
+  "ensemble_case": null,
+  "ensemble_seed": null
 }
 ```
 
@@ -248,6 +312,35 @@ with no live engine or LLM calls. Line order:
 3. one `{"type": "metrics", …}` (§3.3) as the final line
 
 This file is self-contained: meta + ticks + metrics fully describe the run.
+
+### 3.5 `EnsembleResult` (multi-case summary, Phase 3 target)
+
+The ensemble envelope is not part of a single-run NDJSON stream. It is the gateway
+and frontend summary shape for low/base/high peer-crowding cases across multiple
+deterministic seeds.
+
+```jsonc
+{
+  "type": "ensemble",
+  "run_id": "ensemble-9f1c",
+  "cases": [
+    {
+      "case": "base",
+      "seeds": [42, 43, 44],
+      "peer_crowding": null,
+      "metrics": { "type": "metrics" },
+      "representative_replay_ref": "runs/base-42.ndjson"
+    }
+  ],
+  "bands": {
+    "fill_rate": { "low": 0.45, "median": 0.56, "high": 0.64 },
+    "pct_stuck": { "low": 0.36, "median": 0.44, "high": 0.55 }
+  },
+  "representative_case": "base",
+  "representative_replay_ref": "runs/base-42.ndjson",
+  "evidence_summary": null
+}
+```
 
 ---
 
@@ -328,3 +421,4 @@ version so an old recording is always interpretable.
 | `0.1.0` | 2026-06-11 | Initial boundary: `RunConfig`, `Stance`, `MarketState`, `TickEvent`, `Metrics`, NDJSON record, and the `session.state` keys. |
 | `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |
 | `0.3.0` | 2026-06-13 | Added `crisis_intensity` (optional, defaults to `1.0`). Crisis magnitude is now decoupled from trailing volatility: volatility is a floored fragility amplifier, not a gate, so a severe enough crisis can close even a calm, deep name while a mild one leaves it open. The live path derives the intensity from the stress text + real news sentiment. Backward-compatible — an omitted `crisis_intensity` reproduces v0.2.0 behaviour. |
+| `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. These default safely for old configs and replays; engine behavior is unchanged until later remediation phases wire the fields in. |

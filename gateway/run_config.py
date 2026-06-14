@@ -33,6 +33,22 @@ EXIT_SPEED_PRESETS: dict[str, float] = {
 DEFAULT_EXIT_SPEED = "measured"
 
 
+def _evidence_source(source: str | None) -> str:
+    if source == "alphavantage":
+        return "alpha_vantage"
+    if source == "curated":
+        return "curated_fixture"
+    if source == "synthetic":
+        return "synthetic_assumption"
+    return "none"
+
+
+def _confidence_for_source(source: str | None) -> str:
+    if source in {"alphavantage", "curated"}:
+        return "high"
+    return "low"
+
+
 def _normalise_mix(mix: dict[str, float] | None) -> dict[str, float]:
     """Coerce a partial/odd crowding mix into six non-negative fractions summing to 1."""
     if not mix:
@@ -79,6 +95,7 @@ def build_run_config(
     levers = levers or {}
     base = flagship_scenario(seed=int(levers.get("seed", 42)))
     data = base.model_dump()
+    data["scenario_mode"] = "live_current" if live_data else "assumption_led"
 
     # Resolve the instrument: real data drives the run when available, otherwise the
     # curated/synthetic fallback. Only the instrument changes — the crowd mix, shocks,
@@ -95,6 +112,22 @@ def build_run_config(
             }
         )
         data["position"]["arrival_price"] = inst["reference_price"]
+        source = str(inst.get("source") or "")
+        data["evidence_summary"] = {
+            "summary": f"Instrument reference resolved from {source or 'unknown'} data.",
+            "items": [
+                {
+                    "field": "instrument",
+                    "source": _evidence_source(source),
+                    "confidence": _confidence_for_source(source),
+                    "label": inst["symbol"],
+                    "notes": (
+                        "Reference price, ADV, free-float proxy, and realized volatility "
+                        "used to scale the run."
+                    ),
+                }
+            ],
+        }
 
     # Position size is the user's own free, editable share count — the real position
     # being stress-tested — never auto-sized to the name's ADV.

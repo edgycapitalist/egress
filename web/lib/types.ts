@@ -13,6 +13,72 @@ export const INVESTOR_TYPES = [
 ] as const;
 
 export type InvestorType = (typeof INVESTOR_TYPES)[number];
+export type Confidence = "low" | "medium" | "high";
+export type EvidenceSource =
+  | "alpha_vantage"
+  | "sec_edgar"
+  | "user_upload"
+  | "curated_fixture"
+  | "synthetic_assumption"
+  | "gemini_inference"
+  | "none";
+export type ScenarioMode =
+  | "historical_saved"
+  | "live_current"
+  | "assumption_led"
+  | "sec_evidence"
+  | "user_upload";
+export type PeerCrowdingCase = "low" | "base" | "high" | "custom";
+
+export interface EvidenceItem {
+  field: string;
+  source: EvidenceSource;
+  confidence: Confidence;
+  label: string;
+  as_of: string | null;
+  notes: string;
+}
+
+export interface EvidenceSummary {
+  items: EvidenceItem[];
+  summary: string;
+}
+
+export interface PeerCrowdingProfile {
+  case: PeerCrowdingCase;
+  peer_fund_count: number;
+  overlap_pct: number;
+  avg_peer_position_pct_adv: number;
+  shared_trigger_drawdown_pct: number;
+  correlated_exit_probability: number;
+  leverage_sensitivity: number;
+  redemption_pressure: number;
+  etf_flow_pressure: number;
+  evidence_source: EvidenceSource;
+  confidence: Confidence;
+  notes: string;
+}
+
+export interface TimeScale {
+  tick_duration_seconds: number;
+  session_ticks: number;
+  exit_horizon_ticks: number | null;
+  exit_horizon_hours: number | null;
+  exit_horizon_days: number | null;
+}
+
+export interface PeerActionCounts {
+  triggered_funds: number;
+  liquidating_funds: number;
+  shares_sold: number;
+  shares_remaining: number;
+}
+
+export interface ImpactAttribution {
+  exogenous_shock_bps: number;
+  endogenous_trading_bps: number;
+  liquidity_withdrawal_bps: number;
+}
 
 export interface Shock {
   tick: number;
@@ -41,6 +107,10 @@ export interface RunConfig {
   max_ticks: number;
   ticks_per_window: number;
   baseline_mode: boolean;
+  peer_crowding?: PeerCrowdingProfile | null;
+  time_scale?: TimeScale;
+  scenario_mode?: ScenarioMode;
+  evidence_summary?: EvidenceSummary | null;
   crisis_intensity?: number; // crisis magnitude; 1.0 = neutral (absent on older replays)
 }
 
@@ -63,6 +133,8 @@ export interface TickEvent {
   cumulative_filled: number;
   vwap_sold: number | null;
   actions_by_type: Record<string, number>;
+  peer_actions?: PeerActionCounts;
+  impact_attribution?: ImpactAttribution;
   halted: boolean;
   halt_started: boolean;
   shock_applied: Shock | null;
@@ -85,6 +157,33 @@ export interface Metrics {
   halt_triggered: boolean;
   halt_count: number;
   ticks_run: number;
+  impact_attribution?: ImpactAttribution;
+  ensemble_case?: PeerCrowdingCase | null;
+  ensemble_seed?: number | null;
+}
+
+export interface MetricBand {
+  low: number;
+  median: number;
+  high: number;
+}
+
+export interface EnsembleCaseSummary {
+  case: PeerCrowdingCase;
+  seeds: number[];
+  peer_crowding: PeerCrowdingProfile | null;
+  metrics: Metrics;
+  representative_replay_ref: string | null;
+}
+
+export interface EnsembleResult {
+  type: "ensemble";
+  run_id: string;
+  cases: EnsembleCaseSummary[];
+  bands: Record<string, MetricBand>;
+  representative_case: PeerCrowdingCase;
+  representative_replay_ref: string | null;
+  evidence_summary: EvidenceSummary | null;
 }
 
 export type RunSource = "cached" | "live-baseline" | "live-gemini";

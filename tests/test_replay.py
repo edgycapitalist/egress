@@ -1,5 +1,7 @@
 """NDJSON record/replay round-trip tests."""
 
+from pathlib import Path
+
 from engine.replay.recorder import Recorder, load_replay
 from engine.schema import SCHEMA_VERSION, Metrics, RunConfig, TickEvent
 
@@ -56,6 +58,18 @@ def test_round_trip(tmp_path) -> None:
     assert len(ticks) == 3
     assert ticks[1].last_price == 99.0
     assert loaded_metrics.filled_qty == 500
+
+
+def test_committed_legacy_replay_loads_with_phase1_defaults() -> None:
+    meta, ticks, metrics = load_replay(Path("docs/replays/cvna.ndjson"))
+    assert meta.schema_version == "0.2.0"
+    assert meta.config.scenario_mode == "historical_saved"
+    assert meta.config.time_scale.session_ticks == 100
+    assert meta.config.peer_crowding is None
+    assert ticks[0].peer_actions.triggered_funds == 0
+    assert ticks[0].impact_attribution.total_bps == 0.0
+    assert metrics is not None
+    assert metrics.impact_attribution.total_bps == 0.0
 
 
 def test_line_count_and_order(tmp_path) -> None:
