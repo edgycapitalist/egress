@@ -224,6 +224,7 @@ export interface Levers {
   peer_source_mode?: PeerSourceMode;
   peer_crowding?: Partial<PeerCrowdingProfile>;
   user_holdings_csv?: string;
+  cusip?: string;
   time_scale?: Partial<TimeScale>;
   exit_horizon_ticks?: number;
   exit_horizon_hours?: number;

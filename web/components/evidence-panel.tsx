@@ -12,7 +12,7 @@ import { fmtPct } from "@/lib/utils";
 
 const SOURCE_LABELS: Record<EvidenceSource, string> = {
   alpha_vantage: "Alpha Vantage",
-  sec_edgar: "SEC EDGAR",
+  sec_edgar: "SEC 13F / EDGAR",
   user_upload: "User upload",
   curated_fixture: "Curated fixture",
   synthetic_assumption: "Synthetic assumption",
@@ -32,6 +32,10 @@ export function EvidencePanel({
   const items = summary?.items ?? [];
   const assumptionLed =
     peer?.evidence_source === "synthetic_assumption" || config?.scenario_mode === "assumption_led";
+  const secLookupOnly =
+    Boolean(peer) &&
+    peer?.evidence_source !== "sec_edgar" &&
+    items.some((item) => item.field === "sec_lookup" && item.source === "sec_edgar");
 
   if (!config && !ensemble) {
     return <p className="px-4 pb-4 text-[12px] text-ink-faint">Evidence labels appear after a run.</p>;
@@ -44,6 +48,13 @@ export function EvidencePanel({
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           Peer crowding is assumption-led. Treat the result as a transparent stress range, not an
           evidence-backed forecast.
+        </div>
+      ) : null}
+
+      {secLookupOnly ? (
+        <div className="flex items-start gap-2 rounded-[8px] border border-halt/30 bg-halt/10 px-3 py-2 text-[11.5px] leading-relaxed text-halt">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          SEC lookup only; peer assumptions came from curated or synthetic fallback evidence.
         </div>
       ) : null}
 

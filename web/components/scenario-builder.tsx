@@ -66,7 +66,7 @@ const DEFAULT_PEER: Partial<PeerCrowdingProfile> = {
 
 const PEER_MODES: { key: PeerSourceMode; label: string; icon: React.ReactNode }[] = [
   { key: "assumption_led", label: "Assume", icon: <Users className="h-3.5 w-3.5" /> },
-  { key: "sec_evidence", label: "SEC", icon: <FileSearch className="h-3.5 w-3.5" /> },
+  { key: "sec_evidence", label: "SEC 13F", icon: <FileSearch className="h-3.5 w-3.5" /> },
   { key: "user_upload", label: "Upload", icon: <Upload className="h-3.5 w-3.5" /> },
 ];
 
@@ -204,6 +204,7 @@ export function ScenarioBuilder({
     if (mode === "assumption_led") {
       patch.peer_crowding = { ...DEFAULT_PEER, ...(levers.peer_crowding ?? {}) };
       patch.user_holdings_csv = "";
+      patch.cusip = "";
     }
     set(patch);
   };
@@ -552,6 +553,36 @@ export function ScenarioBuilder({
             <Caption>{peerModeCaption(peerMode)}</Caption>
           </div>
 
+          {peerMode === "sec_evidence" ? (
+            <div className="space-y-1.5">
+              <Label>CUSIP</Label>
+              <input
+                type="text"
+                value={levers.cusip ?? ""}
+                onChange={(e) =>
+                  set({
+                    cusip: e.target.value
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, "")
+                      .slice(0, 9),
+                  })
+                }
+                disabled={busy}
+                spellCheck={false}
+                placeholder="Optional, e.g. 146869102"
+                className={cn(
+                  "w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 text-[12.5px] uppercase tracking-wide text-ink placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint focus:border-line-strong focus:outline-none",
+                  busy && "opacity-55",
+                )}
+              />
+              <Caption>
+                Filters free quarterly SEC 13F holder rows. CVNA, SIVB, AAPL, and SPY have demo
+                ticker mappings; enter a CUSIP for other names. If holder rows are unavailable, the
+                run labels the curated or synthetic fallback.
+              </Caption>
+            </div>
+          ) : null}
+
           {peerMode === "user_upload" ? (
             <div className="space-y-1.5">
               <textarea
@@ -724,7 +755,7 @@ function MiniSlider({
 
 function peerModeCaption(mode: PeerSourceMode): string {
   if (mode === "sec_evidence") {
-    return "Uses free public SEC EDGAR evidence when enabled, then falls back to curated or synthetic assumptions with labels.";
+    return "Uses free public SEC 13F holder rows when available, then falls back to curated or synthetic assumptions with labels.";
   }
   if (mode === "user_upload") {
     return "Uses your uploaded holder rows first, so private or desk-curated evidence can drive the peer profile.";

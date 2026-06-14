@@ -289,6 +289,24 @@ CVNA,Beta Fund,600000,2024-03-31
     }
 
 
+def test_gateway_build_run_config_uses_sec13f_cusip(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EGRESS_ENABLE_SEC_EDGAR", "true")
+    monkeypatch.setenv("EGRESS_SEC13F_LOCAL_ZIP", _write_fake_13f_zip(tmp_path))
+    cfg = build_run_config(
+        {
+            "symbol": "CVNA",
+            "peer_source_mode": "sec_evidence",
+            "cusip": "146869102",
+        }
+    )
+    assert cfg.scenario_mode == "sec_evidence"
+    assert cfg.peer_crowding is not None
+    assert cfg.peer_crowding.evidence_source == "sec_edgar"
+    assert cfg.peer_crowding.peer_fund_count == 2
+    assert cfg.evidence_summary is not None
+    assert any(item.source == "sec_edgar" for item in cfg.evidence_summary.items)
+
+
 def test_gateway_assumption_led_controls_remain_available() -> None:
     cfg = build_run_config(
         {
