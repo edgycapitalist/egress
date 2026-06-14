@@ -19,6 +19,7 @@ from typing import Any
 
 from engine.scenarios import flagship_scenario
 from engine.schema import INVESTOR_TYPES, RunConfig
+from mcp.positioning.data import get_peer_crowding_evidence
 
 from gateway.crisis import derive_crisis_intensity
 from gateway.instruments import resolve_instrument
@@ -47,6 +48,48 @@ def _confidence_for_source(source: str | None) -> str:
     if source in {"alphavantage", "curated"}:
         return "high"
     return "low"
+
+
+def _merge_evidence_summary(current: dict | None, incoming: dict | None) -> dict | None:
+    if not incoming:
+        return current
+    if not current:
+        return dict(incoming)
+    return {
+        "summary": " ".join(
+            part
+            for part in (
+                str(current.get("summary") or "").strip(),
+                str(incoming.get("summary") or "").strip(),
+            )
+            if part
+        ),
+        "items": [*(current.get("items") or []), *(incoming.get("items") or [])],
+    }
+
+
+def _scenario_mode_for_peer_source(source: str | None, requested_mode: str | None) -> str:
+    if source == "user_upload":
+        return "user_upload"
+    if source == "sec_edgar":
+        return "sec_evidence"
+    if (requested_mode or "").replace("-", "_") == "assumption_led":
+        return "assumption_led"
+    return "live_current"
+
+
+def _assumption_profile_from_levers(profile: dict, controls: dict | None) -> dict:
+    """Overlay UI peer-crowding controls onto an assumption-led profile."""
+    if not controls:
+        return profile
+    merged = {**profile, **dict(controls)}
+    merged["evidence_source"] = "synthetic_assumption"
+    merged["confidence"] = merged.get("confidence") or "low"
+    merged["notes"] = (
+        str(merged.get("notes") or "").strip()
+        or "User-edited assumption-led peer-crowding controls."
+    )
+    return merged
 
 
 def _normalise_mix(mix: dict[str, float] | None) -> dict[str, float]:
@@ -87,6 +130,9 @@ def build_run_config(
     * ``peer_crowding``   dict  — optional institutional overlap assumptions
     * ``time_scale``      dict  — optional tick/session/horizon conversion fields
     * ``seed``            int   — reproducibility seed
+    * ``peer_source_mode`` str  — "assumption_led", "sec_evidence", "user_upload",
+                                  "curated_fixture", or "auto" for positioning evidence
+    * ``user_holdings_csv`` str — optional uploaded holdings CSV text
 
     ``live_data`` enables the real Alpha Vantage feed for the instrument. It defaults
     off so offline runs (tests, cached recordings, the discrimination harness) stay
@@ -153,7 +199,29 @@ def build_run_config(
     }
 
     data["crowding_mix"] = _normalise_mix(levers.get("crowding_mix"))
-    if levers.get("peer_crowding"):
+    peer_source_mode = str(
+        levers.get("peer_source_mode") or levers.get("positioning_source_mode") or ""
+    ).strip()
+    user_holdings_csv = str(levers.get("user_holdings_csv") or "").strip()
+    if peer_source_mode or user_holdings_csv:
+        positioning = get_peer_crowding_evidence(
+            data["instrument"]["symbol"],
+            source_mode=peer_source_mode or "auto",
+            user_holdings_csv=user_holdings_csv,
+        )
+        peer_profile = dict(positioning["peer_crowding"])
+        if peer_source_mode.replace("-", "_") == "assumption_led":
+            peer_profile = _assumption_profile_from_levers(
+                peer_profile, levers.get("peer_crowding")
+            )
+        data["peer_crowding"] = peer_profile
+        data["scenario_mode"] = _scenario_mode_for_peer_source(
+            positioning.get("selected_source"), peer_source_mode
+        )
+        data["evidence_summary"] = _merge_evidence_summary(
+            data.get("evidence_summary"), positioning.get("evidence_summary")
+        )
+    elif levers.get("peer_crowding"):
         data["peer_crowding"] = dict(levers["peer_crowding"])
 
     time_scale = dict(data.get("time_scale") or {})
