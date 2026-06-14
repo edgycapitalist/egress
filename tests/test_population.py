@@ -1,9 +1,10 @@
 """Population and exit-trader behaviour tests."""
 
 import numpy as np
+from engine.population.peers import PeerCohorts
 from engine.population.population import MarketView, Population
 from engine.population.trader import ExitTrader
-from engine.schema import ExitSpeed, Position, Stance
+from engine.schema import ExitSpeed, Position, RunConfig, Stance
 
 
 def _stances(**overrides) -> dict:
@@ -89,6 +90,39 @@ def test_forced_sellers_fire_once() -> None:
     _, _, a2 = pop.step(crash, _stances(), rng)
     assert a1["forced_seller"] > 0
     assert a2["forced_seller"] == 0  # already acted, one-shot
+
+
+def test_peer_cohorts_wait_for_shared_trigger_then_liquidate() -> None:
+    data = _config().model_dump()
+    data["peer_crowding"] = {
+        "case": "high",
+        "peer_fund_count": 6,
+        "overlap_pct": 0.8,
+        "avg_peer_position_pct_adv": 0.02,
+        "shared_trigger_drawdown_pct": 0.03,
+        "correlated_exit_probability": 1.0,
+        "leverage_sensitivity": 0.4,
+        "redemption_pressure": 0.5,
+        "etf_flow_pressure": 0.1,
+    }
+    cfg = RunConfig(**data)
+    rng = np.random.default_rng(cfg.seed)
+    peers = PeerCohorts(cfg, rng)
+
+    calm = MarketView(ref_price=100.0, last_price=100.0, recent_return=0.0, stress=0.0, tick=0)
+    intents, actions = peers.step(calm, rng)
+    assert intents == []
+    assert actions.triggered_funds == 0
+
+    crash = MarketView(ref_price=100.0, last_price=85.0, recent_return=-0.15, stress=0.8, tick=1)
+    intents, actions = peers.step(crash, rng)
+    assert actions.triggered_funds == cfg.peer_crowding.peer_fund_count
+    assert actions.liquidating_funds == cfg.peer_crowding.peer_fund_count
+    assert actions.shares_sold == sum(intent.size for intent in intents)
+    assert actions.shares_remaining < peers.snapshot().total_initial_shares
+    assert all(
+        intent.side == "sell" and intent.investor_type == "peer_cohort" for intent in intents
+    )
 
 
 def test_exit_trader_twap_paces_and_records() -> None:

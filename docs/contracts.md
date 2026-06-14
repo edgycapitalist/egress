@@ -148,6 +148,8 @@ run starts). Consumed by engine setup and by the archetype agents.
 - `peer_crowding` fields are optional as a group; when present, count fields are
   non-negative and probability/pressure/drawdown fields are fractions in `[0, 1]`.
 - `time_scale` defaults to `100` ticks per ADV session and `234` seconds per tick.
+  If an exit horizon is set, explicit ticks win over hours, and hours win over days.
+  The derived horizon caps the run inside `max_ticks`; `max_ticks` remains a hard cap.
 
 **Liquidity semantics (v0.2.0).** The engine consumes the real instrument data so a
 run tracks the name, not just the scenario: resting book depth and per-agent order
@@ -169,12 +171,13 @@ from the user's stress text and the instrument's real news sentiment
 (`gateway/crisis.py`), so the description genuinely drives the outcome; the discrimination
 harness pins a fixed *moderate* intensity across all names (no per-episode tuning).
 
-**Product-accuracy metadata (v0.4.0).** `peer_crowding`, `time_scale`,
-`scenario_mode`, and `evidence_summary` are metadata and assumption-contract fields
-for the product-accuracy remediation work. In v0.4.0 they are backward-compatible:
-old configs parse with `peer_crowding = null`, a `time_scale` of `100` ticks per
-ADV session, `scenario_mode = "historical_saved"`, and no evidence summary. Later
-phases wire these fields into deterministic peer cohorts, ensemble runs, SEC/user
+**Product-accuracy fields (v0.4.0).** `peer_crowding`, `time_scale`,
+`scenario_mode`, and `evidence_summary` are backward-compatible assumption-contract
+fields for product-accuracy remediation. Old configs parse with `peer_crowding =
+null`, a `time_scale` of `100` ticks per ADV session, `scenario_mode =
+"historical_saved"`, and no evidence summary. Phase 2 wires `peer_crowding` into
+deterministic peer-fund cohorts and `time_scale` into the exit horizon and
+ADV-per-tick natural volume. Later phases add ensemble envelopes, SEC/user
 positioning evidence, and frontend evidence labels.
 
 ---
@@ -252,13 +255,13 @@ stances, and by the analyst at the end.
     "forced_seller": 320, "panic_seller": 210, "trend_follower": 180,
     "bargain_hunter": 40, "market_maker": 12, "holder": 3
   },
-  "peer_actions": {                // defaults to zero until peer cohorts are wired
+  "peer_actions": {                // peer-fund cohort activity, zero when absent
     "triggered_funds": 0,
     "liquidating_funds": 0,
     "shares_sold": 0,
     "shares_remaining": 0
   },
-  "impact_attribution": {          // bps; defaults to zero for old replays
+  "impact_attribution": {          // bps; populated by the engine for new runs
     "exogenous_shock_bps": 0.0,
     "endogenous_trading_bps": 0.0,
     "liquidity_withdrawal_bps": 0.0
@@ -292,7 +295,7 @@ writes the outcome to memory).
   "halt_triggered": true,
   "halt_count": 2,
   "ticks_run": 600,
-  "impact_attribution": {
+  "impact_attribution": {               // aggregate of tick-level attribution
     "exogenous_shock_bps": 0.0,
     "endogenous_trading_bps": 0.0,
     "liquidity_withdrawal_bps": 0.0

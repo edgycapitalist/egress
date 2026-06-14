@@ -9,6 +9,7 @@ build to the same boundary.
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -126,6 +127,25 @@ class TimeScale(BaseModel):
 
     def session_hours(self) -> float:
         return self.tick_duration_seconds * self.session_ticks / 3600.0
+
+    def natural_volume_per_tick(self, adv: int) -> int:
+        """Shares in one natural market tick under this time scale."""
+        return max(1, int(adv / self.session_ticks))
+
+    def effective_exit_horizon_ticks(self) -> int | None:
+        """The configured exit horizon converted to engine ticks.
+
+        Explicit ticks win over clock hours, which win over trading days. The
+        default ``None`` preserves the legacy ``RunConfig.max_ticks`` horizon.
+        """
+        if self.exit_horizon_ticks is not None:
+            return self.exit_horizon_ticks
+        if self.exit_horizon_hours is not None:
+            hours_ticks = self.exit_horizon_hours * 3600.0 / self.tick_duration_seconds
+            return max(1, int(math.ceil(hours_ticks)))
+        if self.exit_horizon_days is not None:
+            return max(1, int(math.ceil(self.exit_horizon_days * self.session_ticks)))
+        return None
 
 
 class Instrument(BaseModel):

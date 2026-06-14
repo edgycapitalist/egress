@@ -125,6 +125,27 @@ def test_build_run_config_applies_population_size() -> None:
     assert cfg.population_size == 12_000
 
 
+def test_build_run_config_accepts_phase2_peer_and_time_scale_levers() -> None:
+    cfg = build_run_config(
+        {
+            "peer_crowding": {
+                "case": "base",
+                "peer_fund_count": 4,
+                "overlap_pct": 0.5,
+                "avg_peer_position_pct_adv": 0.03,
+                "shared_trigger_drawdown_pct": 0.04,
+                "correlated_exit_probability": 0.8,
+            },
+            "time_scale": {"session_ticks": 80},
+            "exit_horizon_days": 1.5,
+        }
+    )
+    assert cfg.peer_crowding is not None
+    assert cfg.peer_crowding.peer_fund_count == 4
+    assert cfg.time_scale.session_ticks == 80
+    assert cfg.time_scale.effective_exit_horizon_ticks() == 120
+
+
 def test_scenario_defaults_includes_population_size() -> None:
     body = TestClient(app).get("/api/scenario/defaults").json()
     assert body["population_size"] > 0

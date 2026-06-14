@@ -8,7 +8,7 @@ the simulated unwind did.
 from __future__ import annotations
 
 from engine.population.trader import ExitTrader
-from engine.schema import Metrics, RunConfig
+from engine.schema import ImpactAttribution, Metrics, RunConfig
 
 
 def _max_drawdown_pct(price_path: list[float]) -> float:
@@ -27,6 +27,7 @@ def compute_metrics(
     price_path: list[float],
     halt_count: int,
     ticks_run: int,
+    impact_attribution: ImpactAttribution | None = None,
 ) -> Metrics:
     quantity = config.position.quantity
     arrival = config.position.arrival_price
@@ -60,4 +61,5 @@ def compute_metrics(
         halt_triggered=halt_count > 0,
         halt_count=halt_count,
         ticks_run=ticks_run,
+        impact_attribution=impact_attribution or ImpactAttribution(),
     )

@@ -69,6 +69,8 @@ Steps:
 3. Translate the stress event into a shock schedule: news shocks (a downgrade, a
    scare) and price shocks (a gap down) at specific ticks within the horizon, each
    with a severity in 0..1.
+4. If the prompt includes an assessed crisis intensity, copy that scalar into
+   crisis_intensity so the deterministic engine receives the same stress read.
 
 Output a ScenarioDraft. Choose values that realistically express what the user
 described; do not echo placeholders. Keep ticks within max_ticks."""

@@ -1,5 +1,6 @@
 """End-to-end engine integration tests."""
 
+from engine.baseline import baseline_stances
 from engine.core import Engine
 from engine.replay.recorder import Recorder, load_replay
 from engine.scenarios import flagship_scenario
@@ -55,3 +56,72 @@ def test_run_records_valid_replay(tmp_path) -> None:
     # Cumulative fills are monotonic non-decreasing.
     cum = [t.cumulative_filled for t in ticks]
     assert all(b >= a for a, b in zip(cum, cum[1:], strict=False))
+
+
+def test_time_scale_sets_natural_volume_and_exit_horizon() -> None:
+    data = flagship_scenario().model_dump()
+    data["run_id"] = "time-scale"
+    data["exit_speed"] = {"mode": "twap", "horizon_ticks": 999}
+    data["time_scale"] = {
+        "tick_duration_seconds": 234.0,
+        "session_ticks": 50,
+        "exit_horizon_days": 2.0,
+    }
+    cfg = RunConfig(**data)
+
+    eng = Engine(cfg)
+    assert eng.trader.natural_volume == cfg.instrument.adv // 50
+    assert eng.effective_max_ticks == 100
+    assert eng.trader.exit_speed.horizon_ticks == 100
+    assert eng.trader.child_size(0) == 2500
+
+
+def test_peer_crowding_emits_peer_actions_from_engine_tick() -> None:
+    data = flagship_scenario().model_dump()
+    data["run_id"] = "peer-actions"
+    data["shock_schedule"] = [
+        {"tick": 0, "kind": "price", "severity": 0.8, "note": "gap through peer trigger"}
+    ]
+    data["peer_crowding"] = {
+        "case": "high",
+        "peer_fund_count": 8,
+        "overlap_pct": 0.75,
+        "avg_peer_position_pct_adv": 0.01,
+        "shared_trigger_drawdown_pct": 0.02,
+        "correlated_exit_probability": 1.0,
+        "leverage_sensitivity": 0.5,
+        "redemption_pressure": 0.5,
+        "etf_flow_pressure": 0.2,
+    }
+    eng = Engine(RunConfig(**data))
+    eng.start()
+    _, events = eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+
+    assert events[0].peer_actions.triggered_funds == 8
+    assert events[0].peer_actions.liquidating_funds == 8
+    assert events[0].peer_actions.shares_sold > 0
+    assert events[0].peer_actions.shares_remaining > 0
+
+
+def test_tick_and_metrics_impact_attribution_are_populated() -> None:
+    data = flagship_scenario().model_dump()
+    data["run_id"] = "impact-attribution"
+    data["shock_schedule"] = [
+        {"tick": 0, "kind": "price", "severity": 0.8, "note": "opening gap"}
+    ]
+    data["time_scale"]["exit_horizon_ticks"] = 1
+    eng = Engine(RunConfig(**data))
+    eng.start()
+    _, events = eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+    metrics = eng.finalize()
+
+    impact = events[0].impact_attribution
+    assert impact.exogenous_shock_bps > 0
+    assert round(impact.total_bps, 4) == round(
+        impact.exogenous_shock_bps
+        + impact.endogenous_trading_bps
+        + impact.liquidity_withdrawal_bps,
+        4,
+    )
+    assert metrics.impact_attribution.exogenous_shock_bps == impact.exogenous_shock_bps
+    assert metrics.impact_attribution.total_bps == impact.total_bps

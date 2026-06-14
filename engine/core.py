@@ -24,6 +24,7 @@ import numpy as np
 from engine.halt import HaltController
 from engine.metrics.metrics import compute_metrics
 from engine.orderbook.book import OrderBook, snap_to_tick
+from engine.population.peers import PeerCohorts
 from engine.population.population import MarketView, OrderIntent, Population
 from engine.population.trader import ExitTrader
 from engine.replay.recorder import Recorder
@@ -32,9 +33,11 @@ from engine.schema import (
     REFERENCE_VOLATILITY,
     Depth,
     Fill,
+    ImpactAttribution,
     InvestorType,
     MarketState,
     Metrics,
+    PeerActionCounts,
     RunConfig,
     Stance,
     TickEvent,
@@ -51,11 +54,6 @@ VOL_GAIN_BOUNDS = (0.05, 2.5)
 # fragile one. At vol_gain == 1 the fragility factor is 1, so the flagship (and any
 # reference-vol name) is unchanged. frag = FRAG_FLOOR + (1 - FRAG_FLOOR) * vol_gain.
 FRAG_FLOOR = 0.45
-# Ticks that stand in for one ADV's worth of trading. The natural per-tick market
-# volume a participation algo works against is ADV / this, so the full run (max_ticks)
-# represents a few sessions — enough to complete a large %ADV exit when liquidity allows.
-ADV_SESSION_TICKS = 100
-
 
 class Engine:
     def __init__(self, config: RunConfig, recorder: Recorder | None = None) -> None:
@@ -85,13 +83,22 @@ class Engine:
 
         self.book = OrderBook(self.tick_size, ref)
         self.population = Population(config, self.rng)
+        self.peer_cohorts = PeerCohorts(config, self.rng)
+        horizon_ticks = config.time_scale.effective_exit_horizon_ticks()
+        self.effective_max_ticks = (
+            min(config.max_ticks, horizon_ticks) if horizon_ticks is not None else config.max_ticks
+        )
+        exit_speed = config.exit_speed
+        if exit_speed.mode == "twap" and horizon_ticks is not None:
+            exit_speed = exit_speed.model_copy(update={"horizon_ticks": horizon_ticks})
         self.trader = ExitTrader(
             config.position,
-            config.exit_speed,
-            natural_volume=config.instrument.adv // ADV_SESSION_TICKS,
+            exit_speed,
+            natural_volume=config.time_scale.natural_volume_per_tick(config.instrument.adv),
         )
         self.halt = HaltController(config.halt_rule)
         self.stress_regime = StressRegime()
+        self.impact_attribution = ImpactAttribution()
 
         self.tick = 0
         self.window_index = 0
@@ -121,14 +128,27 @@ class Engine:
             if self.recorder:
                 self.recorder.write_tick(event)
             stalled = self._idle >= STALL_TICKS and self.trader.remaining > 0
-            if self.tick >= self.config.max_ticks or self.trader.remaining <= 0 or stalled:
+            if self.tick >= self.effective_max_ticks or self.trader.remaining <= 0 or stalled:
                 self.done = True
         self.window_index += 1
         return self._market_state(), events
 
     def finalize(self) -> Metrics:
         metrics = compute_metrics(
-            self.config, self.trader, self.price_path, self.halt.halt_count, self.tick
+            self.config,
+            self.trader,
+            self.price_path,
+            self.halt.halt_count,
+            self.tick,
+            impact_attribution=ImpactAttribution(
+                exogenous_shock_bps=round(self.impact_attribution.exogenous_shock_bps, 4),
+                endogenous_trading_bps=round(
+                    self.impact_attribution.endogenous_trading_bps, 4
+                ),
+                liquidity_withdrawal_bps=round(
+                    self.impact_attribution.liquidity_withdrawal_bps, 4
+                ),
+            ),
         )
         if self.recorder:
             self.recorder.write_metrics(metrics)
@@ -139,14 +159,17 @@ class Engine:
         tick = self.tick
         shock = self._shocks.get(tick)
         shock_sev = shock.severity if shock else 0.0
+        exogenous_shock_bps = 0.0
 
         # A price shock gaps the last price down before any trading; a deep, calm
         # name barely gaps, a fragile one gaps hard.
         if shock and shock.kind == "price":
+            before_shock = self.last_price
             self.last_price = snap_to_tick(
                 self.last_price * (1.0 - 0.08 * shock.severity * self.crisis * self.frag),
                 self.tick_size,
             )
+            exogenous_shock_bps = (before_shock - self.last_price) / self.ref_price * 1e4
 
         drop = max(0.0, (self.ref_price - self.last_price) / self.ref_price)
         self.stress = self.stress_regime.step(
@@ -166,9 +189,20 @@ class Engine:
         fills: list[Fill] = []
         actions = dict.fromkeys(INVESTOR_TYPES, 0)
         volume = 0
+        peer_actions = PeerActionCounts()
+        trading_impact = ImpactAttribution()
 
         if trading_allowed:
-            fills, actions, volume = self._trade(view, stances)
+            fills, actions, volume, peer_actions, trading_impact = self._trade(view, stances)
+
+        impact = ImpactAttribution(
+            exogenous_shock_bps=round(exogenous_shock_bps, 4),
+            endogenous_trading_bps=round(trading_impact.endogenous_trading_bps, 4),
+            liquidity_withdrawal_bps=round(trading_impact.liquidity_withdrawal_bps, 4),
+        )
+        self.impact_attribution.exogenous_shock_bps += impact.exogenous_shock_bps
+        self.impact_attribution.endogenous_trading_bps += impact.endogenous_trading_bps
+        self.impact_attribution.liquidity_withdrawal_bps += impact.liquidity_withdrawal_bps
 
         halted_now, halt_started = self.halt.update(self.last_price, self.ref_price)
 
@@ -187,6 +221,8 @@ class Engine:
             cumulative_filled=self.trader.filled,
             vwap_sold=round(self.trader.vwap, 4) if self.trader.vwap is not None else None,
             actions_by_type=dict(actions),
+            peer_actions=peer_actions,
+            impact_attribution=impact,
             halted=halted_now,
             halt_started=halt_started,
             shock_applied=shock,
@@ -201,10 +237,11 @@ class Engine:
 
     def _trade(
         self, view: MarketView, stances: dict[InvestorType, Stance]
-    ) -> tuple[list[Fill], dict[str, int], int]:
+    ) -> tuple[list[Fill], dict[str, int], int, PeerActionCounts, ImpactAttribution]:
         # Fresh liquidity each tick: providers repost, aggressors sweep it.
         self.book.cancel_all()
         liquidity, aggressors, actions = self.population.step(view, stances, self.rng)
+        peer_aggressors, peer_actions = self.peer_cohorts.step(view, self.rng)
         for intent in liquidity:
             self.book.add_limit(intent.side, intent.price, intent.size, intent.investor_type)
 
@@ -213,10 +250,13 @@ class Engine:
         trader_intent = (
             OrderIntent("sell", trader_size, None, "exit_trader") if trader_size > 0 else None
         )
-        sequence: list[OrderIntent] = list(aggressors)
+        sequence: list[OrderIntent] = [*aggressors, *peer_aggressors]
         if trader_intent is not None:
             sequence.append(trader_intent)
 
+        bid_depth_before, _ask_depth_before = self.book.total_depth()
+        sell_intent = sum(intent.size for intent in sequence if intent.side == "sell")
+        start_price = self.last_price
         fills: list[Fill] = []
         volume = 0
         for i in self.rng.permutation(len(sequence)):
@@ -229,7 +269,22 @@ class Engine:
                     self.trader.record(t.price, t.size, view.tick)
 
         self.last_price = self.book.last_price
-        return fills, actions, volume
+        raw_trading_bps = (start_price - self.last_price) / self.ref_price * 1e4
+        withdrawal_bps = 0.0
+        endogenous_bps = raw_trading_bps
+        if raw_trading_bps > 0 and sell_intent > 0:
+            if bid_depth_before <= 0:
+                withdrawal_share = 1.0
+            else:
+                withdrawal_share = 1.0 - min(1.0, bid_depth_before / sell_intent)
+            withdrawal_share = float(np.clip(withdrawal_share, 0.0, 0.85))
+            withdrawal_bps = raw_trading_bps * withdrawal_share
+            endogenous_bps = raw_trading_bps - withdrawal_bps
+        impact = ImpactAttribution(
+            endogenous_trading_bps=endogenous_bps,
+            liquidity_withdrawal_bps=withdrawal_bps,
+        )
+        return fills, actions, volume, peer_actions, impact
 
     # -- driver ------------------------------------------------------------ #
     def run_baseline(self) -> Metrics:

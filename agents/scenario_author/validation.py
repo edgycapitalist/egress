@@ -97,6 +97,10 @@ class ScenarioDraft(BaseModel):
     ticks_per_window: int = Field(
         default=DEFAULT_TICKS_PER_WINDOW, description="How often stances refresh (k ticks)."
     )
+    crisis_intensity: float = Field(
+        default=1.0,
+        description="Overall stress magnitude from the prompt/news read; neutral is 1.0.",
+    )
     rationale: str = Field(default="", description="One sentence on the scenario.")
 
 
@@ -152,6 +156,7 @@ def build_run_config(
             "adv": reference["adv"],
             "free_float": reference["free_float"],
             "halt_tier": reference["halt_tier"],
+            "volatility": reference.get("volatility", 0.09),
         },
         position={
             "side": "sell",
@@ -167,6 +172,7 @@ def build_run_config(
         ticks_per_window=ticks_per_window,
         baseline_mode=baseline_mode,
         scenario_mode="live_current",
+        crisis_intensity=max(0.0, float(draft.crisis_intensity)),
         evidence_summary={
             "summary": f"Instrument reference resolved from {source or 'unknown'} data.",
             "items": [

@@ -76,6 +76,33 @@ def test_build_run_config_normalises_and_validates() -> None:
     assert cfg.halt_rule.band_pct == 0.10
 
 
+def test_build_run_config_carries_volatility_and_crisis_intensity(monkeypatch) -> None:
+    def fake_reference(symbol: str) -> dict:
+        return {
+            "symbol": symbol.upper(),
+            "reference_price": 42.0,
+            "tick_size": 0.01,
+            "adv": 1_250_000,
+            "free_float": 25_000_000,
+            "halt_tier": 1,
+            "volatility": 0.045,
+            "source": "synthetic",
+        }
+
+    monkeypatch.setattr(
+        "agents.scenario_author.validation.get_instrument_reference",
+        fake_reference,
+    )
+    draft = ScenarioDraft(
+        symbol="ACME",
+        position_quantity=50_000,
+        crisis_intensity=1.35,
+    )
+    cfg, _ = build_run_config(draft, run_id="vol", seed=42, baseline_mode=False)
+    assert cfg.instrument.volatility == 0.045
+    assert cfg.crisis_intensity == 1.35
+
+
 def test_blank_crowding_falls_back_to_even_mix() -> None:
     cfg, _ = build_run_config(
         ScenarioDraft(symbol="ZZZ9", position_quantity=1000), run_id="t2", seed=1

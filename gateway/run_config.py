@@ -84,6 +84,8 @@ def build_run_config(
     * ``exit_speed``      str   — one of EXIT_SPEED_PRESETS, or…
     * ``participation_rate`` float — an explicit rate, overriding the preset
     * ``crowding_mix``    dict  — {investor_type: fraction}, renormalised to sum 1
+    * ``peer_crowding``   dict  — optional institutional overlap assumptions
+    * ``time_scale``      dict  — optional tick/session/horizon conversion fields
     * ``seed``            int   — reproducibility seed
 
     ``live_data`` enables the real Alpha Vantage feed for the instrument. It defaults
@@ -151,6 +153,22 @@ def build_run_config(
     }
 
     data["crowding_mix"] = _normalise_mix(levers.get("crowding_mix"))
+    if levers.get("peer_crowding"):
+        data["peer_crowding"] = dict(levers["peer_crowding"])
+
+    time_scale = dict(data.get("time_scale") or {})
+    if levers.get("time_scale"):
+        time_scale.update(dict(levers["time_scale"]))
+    for key in (
+        "tick_duration_seconds",
+        "session_ticks",
+        "exit_horizon_ticks",
+        "exit_horizon_hours",
+        "exit_horizon_days",
+    ):
+        if levers.get(key) is not None:
+            time_scale[key] = levers[key]
+    data["time_scale"] = time_scale
 
     # A fresh id per custom run so live NDJSON files never collide with the flagship.
     data["run_id"] = f"run-{_short_id()}"
