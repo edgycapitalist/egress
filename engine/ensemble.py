@@ -8,9 +8,11 @@ representative replay paths for animation.
 from __future__ import annotations
 
 import statistics
-from collections.abc import Iterable
+import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from engine.baseline import baseline_stances
 from engine.core import Engine
@@ -27,6 +29,7 @@ from engine.schema import (
 
 ENSEMBLE_CASES: tuple[PeerCrowdingCase, ...] = ("low", "base", "high")
 ENSEMBLE_SEED_COUNT = 3
+WindowTimingHook = Callable[[dict[str, Any]], None]
 
 
 @dataclass(frozen=True)
@@ -153,7 +156,11 @@ def _with_case(
 
 
 def _record_baseline_run(
-    config: RunConfig, path: Path, case: PeerCrowdingCase, seed: int
+    config: RunConfig,
+    path: Path,
+    case: PeerCrowdingCase,
+    seed: int,
+    on_window_timing: WindowTimingHook | None = None,
 ) -> Metrics:
     engine = Engine(config)
     with Recorder(path) as recorder:
@@ -162,7 +169,20 @@ def _record_baseline_run(
         while not engine.done:
             drop = max(0.0, (engine.ref_price - engine.last_price) / engine.ref_price)
             stances = baseline_stances(drop, engine.stress, engine.tick)
+            started = time.perf_counter()
             _state, events = engine.advance(stances, config.ticks_per_window)
+            if on_window_timing is not None:
+                on_window_timing(
+                    {
+                        "case": case,
+                        "seed": seed,
+                        "run_id": config.run_id,
+                        "window_index": engine.window_index - 1,
+                        "ticks_requested": config.ticks_per_window,
+                        "ticks_emitted": len(events),
+                        "duration_ms": (time.perf_counter() - started) * 1000.0,
+                    }
+                )
             for event in events:
                 recorder.write_tick(event)
         metrics = engine.finalize().model_copy(
@@ -220,6 +240,7 @@ def run_ensemble(
     *,
     replay_dir: str | Path = "runs",
     seeds: Iterable[int] | None = None,
+    on_window_timing: WindowTimingHook | None = None,
 ) -> EnsembleResult:
     """Run low/base/high peer-crowding cases over deterministic seeds."""
     replay_root = Path(replay_dir)
@@ -235,7 +256,13 @@ def run_ensemble(
         for seed in seed_list:
             run_config = _with_case(config, case, profile, seed)
             replay_ref = replay_root / f"{run_config.run_id}.ndjson"
-            metrics = _record_baseline_run(run_config, replay_ref, case, seed)
+            metrics = _record_baseline_run(
+                run_config,
+                replay_ref,
+                case,
+                seed,
+                on_window_timing=on_window_timing,
+            )
             run = EnsembleRun(case, seed, run_config, metrics, str(replay_ref))
             case_runs.append(run)
             all_runs.append(run)

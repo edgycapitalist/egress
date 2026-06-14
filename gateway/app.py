@@ -168,31 +168,51 @@ def _gemini_enabled() -> bool:
 
 
 async def _run_live(
-    levers: dict[str, Any], use_gemini: bool
+    levers: dict[str, Any], use_gemini: bool, gemini_mode: str | None = None
 ) -> tuple[str, str, str | None, dict[str, Any] | None]:
     """Drive a fresh run. Returns (replay_path, source, analysis, ensemble)."""
     from agents.orchestrator.driver import (  # lazy: keeps cached path import-light
         run_baseline_ensemble,
+        run_fast_live_ensemble,
         run_live_simulation,
     )
 
+    from gateway.crisis import derive_crisis_intensity
+
+    text = str(levers.get("scenario_text") or "")
+    intensity, _detail = derive_crisis_intensity(
+        text, levers.get("symbol"), fetch_news=True
+    )
+    config = build_run_config(levers, live_data=True, crisis_intensity=intensity)
+
     if use_gemini and _gemini_enabled():
-        result = await run_live_simulation(scenario_prompt(levers))
-        source = "live-gemini"
-        ensemble = None
+        from agents.common.env import gemini_live_mode, gemini_timeout_seconds
+
+        requested_mode = (
+            gemini_mode
+            or levers.get("gemini_mode")
+            or os.getenv("EGRESS_GEMINI_LIVE_MODE")
+            or gemini_live_mode()
+        )
+        requested_mode = str(requested_mode).strip().lower().replace("-", "_")
+        if requested_mode in {"detailed", "ai_detailed", "full"}:
+            result = await run_live_simulation(scenario_prompt(levers))
+            source = "live-gemini"
+            ensemble = None
+        else:
+            result = await run_fast_live_ensemble(
+                scenario_prompt(levers),
+                fallback_config=config,
+                timeout_seconds=gemini_timeout_seconds(),
+            )
+            source = "live-baseline" if result.get("fallback_reason") else "live-gemini"
+            ensemble = result.get("ensemble_result")
     else:
         # A live run pulls the instrument's real Alpha Vantage data and derives the
         # crisis magnitude from the typed stress text + the instrument's real news
         # (synthetic fallback when no key), then runs low/base/high peer-crowding
         # cases over fixed deterministic seeds. The representative replay animates
         # exactly like the old single run; the ensemble frame carries the ranges.
-        from gateway.crisis import derive_crisis_intensity
-
-        text = str(levers.get("scenario_text") or "")
-        intensity, _detail = derive_crisis_intensity(
-            text, levers.get("symbol"), fetch_news=True
-        )
-        config = build_run_config(levers, live_data=True, crisis_intensity=intensity)
         result = await run_baseline_ensemble(config)
         source = "live-baseline"
         ensemble = result.get("ensemble_result")
@@ -215,7 +235,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         await ws.send_json({"type": "status", "message": "Running the simulation ensemble…"})
         try:
             replay_path, source, analysis, ensemble = await _run_live(
-                levers, bool(request.get("gemini"))
+                levers, bool(request.get("gemini")), request.get("gemini_mode")
             )
         except Exception as exc:  # surface a clean error frame, never a stack trace
             await ws.send_json({"type": "error", "message": f"Live run failed: {exc}"})

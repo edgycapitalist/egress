@@ -158,6 +158,8 @@ def _record(state: dict, event: dict[str, Any]) -> None:
         _increment(summary, "engine_window_duration_ms", duration)
     elif kind in {"engine_setup", "engine_finalize", "ensemble"}:
         _increment(summary, f"{kind}_duration_ms", duration)
+    elif kind == "fallback":
+        _increment(summary, "fallback_count")
 
     state[TIMING_REPORT] = report
     LOGGER.info("egress_timing %s", event)

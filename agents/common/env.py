@@ -27,6 +27,8 @@ DEFAULTS: dict[str, str] = {
     "GOOGLE_CLOUD_LOCATION": "global",
     "GEMINI_MODEL_FAST": "gemini-3.1-flash-lite",
     "GEMINI_MODEL_STRONG": "gemini-3.1-pro-preview",
+    "EGRESS_GEMINI_LIVE_MODE": "fast",
+    "EGRESS_GEMINI_TIMEOUT_SECONDS": "45",
     "DETERMINISTIC_BASELINE": "true",
     "CACHED_REPLAY": "false",
     "EGRESS_SEED": "42",
@@ -91,6 +93,20 @@ def fast_model() -> str:
 def strong_model() -> str:
     """Stronger Gemini model for the analyst and the calibration critic."""
     return _env("GEMINI_MODEL_STRONG") or "gemini-3.1-pro-preview"
+
+
+def gemini_live_mode() -> str:
+    """Gateway/CLI live Gemini strategy: ``fast`` by default, or ``detailed``."""
+    mode = (_env("EGRESS_GEMINI_LIVE_MODE") or "fast").strip().lower().replace("-", "_")
+    return "detailed" if mode in {"detailed", "ai_detailed", "full"} else "fast"
+
+
+def gemini_timeout_seconds() -> float:
+    """Timeout for live Gemini assumption generation before deterministic fallback."""
+    try:
+        return max(1.0, float(_env("EGRESS_GEMINI_TIMEOUT_SECONDS") or "45"))
+    except ValueError:
+        return 45.0
 
 
 def seed() -> int:
