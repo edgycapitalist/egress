@@ -11,8 +11,19 @@ import { SourcedInputs } from "@/components/sourced-inputs";
 import { FillProgress } from "@/components/fill-progress";
 import { MetricsPanel } from "@/components/metrics-panel";
 import { AnalystPanel } from "@/components/analyst-panel";
+import { EnsembleOutcome } from "@/components/ensemble-outcome";
+import { EvidencePanel } from "@/components/evidence-panel";
+import { ProgressPhases } from "@/components/progress-phases";
 import { useRun } from "@/lib/useRun";
-import type { Levers, Metrics, RunConfig, RunSource, SourcedInput } from "@/lib/types";
+import type {
+  EnsembleCaseSummary,
+  Levers,
+  Metrics,
+  PeerCrowdingCase,
+  RunConfig,
+  RunSource,
+  SourcedInput,
+} from "@/lib/types";
 import { fmtPct } from "@/lib/utils";
 
 const HTTP_BASE = process.env.NEXT_PUBLIC_GATEWAY_HTTP ?? "http://127.0.0.1:8000";
@@ -34,6 +45,26 @@ const DEFAULT_LEVERS: Levers = {
     market_maker: 10,
     holder: 15,
   },
+  peer_source_mode: "assumption_led",
+  peer_crowding: {
+    case: "base",
+    peer_fund_count: 10,
+    overlap_pct: 0.45,
+    avg_peer_position_pct_adv: 0.05,
+    shared_trigger_drawdown_pct: 0.06,
+    correlated_exit_probability: 0.65,
+    leverage_sensitivity: 0.4,
+    redemption_pressure: 0.35,
+    etf_flow_pressure: 0.2,
+    evidence_source: "synthetic_assumption",
+    confidence: "low",
+    notes: "Editable assumption-led peer-crowding profile.",
+  },
+  time_scale: {
+    session_ticks: 100,
+    exit_horizon_days: 3,
+  },
+  exit_horizon_days: 3,
 };
 
 const SOURCE_LABEL: Record<RunSource, string> = {
@@ -43,7 +74,7 @@ const SOURCE_LABEL: Record<RunSource, string> = {
 };
 
 export default function Page() {
-  const { state, start, reset } = useRun();
+  const { state, start, reset, loadReplay } = useRun();
   const [builder, setBuilder] = useState<BuilderState>({
     mode: "cached",
     gemini: false,
@@ -53,6 +84,8 @@ export default function Page() {
   const [avEnabled, setAvEnabled] = useState(false);
   const [sourced, setSourced] = useState<SourcedInput | null>(null);
   const [sourcedLoading, setSourcedLoading] = useState(false);
+  const [selectedCase, setSelectedCase] = useState<PeerCrowdingCase>("base");
+  const [loadingCase, setLoadingCase] = useState<PeerCrowdingCase | null>(null);
 
   // Hydrate defaults + capability from the gateway, if reachable. Falls back silently.
   useEffect(() => {
@@ -97,8 +130,22 @@ export default function Page() {
       .finally(() => setSourcedLoading(false));
   }, [symbol, live]);
 
+  useEffect(() => {
+    if (state.ensemble?.representative_case) {
+      setSelectedCase(state.ensemble.representative_case);
+      setLoadingCase(null);
+    }
+  }, [state.ensemble?.run_id, state.ensemble?.representative_case]);
+
   const run = () =>
     start({ mode: builder.mode, gemini: builder.gemini, levers: builder.levers });
+  const selectCase = async (summary: EnsembleCaseSummary) => {
+    setSelectedCase(summary.case);
+    if (!summary.representative_replay_ref || state.status === "running") return;
+    setLoadingCase(summary.case);
+    await loadReplay(summary.representative_replay_ref);
+    setLoadingCase(null);
+  };
 
   const last = state.ticks[state.ticks.length - 1];
   const haltedNow = Boolean(last?.halted);
@@ -176,6 +223,8 @@ export default function Page() {
             </div>
           ) : null}
 
+          {hasRun ? <ProgressPhases state={state} /> : null}
+
           {!hasRun ? (
             <EmptyState />
           ) : (
@@ -183,7 +232,11 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Price path"
-                  caption="The price as the crowd sells. A steep fall, or a halt marker, means the exit is closing while you are still trying to sell."
+                  caption={
+                    state.ensemble
+                      ? `Selected representative path: ${caseLabel(selectedCase)}. The range cards below show the full low/base/high stress surface.`
+                      : "The price as the crowd sells. A steep fall, or a halt marker, means the exit is closing while you are still trying to sell."
+                  }
                   right={
                     <div className="flex items-center gap-2">
                       {shockCount > 0 ? (
@@ -241,11 +294,37 @@ export default function Page() {
 
               <Card className="fadeup overflow-hidden">
                 <CardHeader
-                  title="Outcome"
-                  caption="The bottom line: could you get out, how far did the price move against you, and how much was left unsold."
+                  title={state.ensemble ? "Outcome range" : "Outcome"}
+                  caption={
+                    state.ensemble
+                      ? "The bottom line as a range: could you get out in low, base, and high peer-crowding cases, and which representative path is selected."
+                      : "The bottom line: could you get out, how far did the price move against you, and how much was left unsold."
+                  }
                 />
-                <Verdict metrics={state.metrics} source={state.source} config={state.config} />
-                <MetricsPanel metrics={state.metrics} />
+                {state.ensemble ? (
+                  <>
+                    <EnsembleOutcome
+                      ensemble={state.ensemble}
+                      selectedCase={selectedCase}
+                      loadingCase={loadingCase}
+                      onSelectCase={selectCase}
+                    />
+                    <MetricsPanel metrics={state.metrics} />
+                  </>
+                ) : (
+                  <>
+                    <Verdict metrics={state.metrics} source={state.source} config={state.config} />
+                    <MetricsPanel metrics={state.metrics} />
+                  </>
+                )}
+              </Card>
+
+              <Card className="fadeup overflow-hidden">
+                <CardHeader
+                  title="Evidence"
+                  caption="Source and confidence labels for the major assumptions behind this run."
+                />
+                <EvidencePanel config={state.config} ensemble={state.ensemble} />
               </Card>
 
               <Card className="fadeup overflow-hidden">
@@ -321,6 +400,13 @@ function crisisLabel(ci: number): string {
   if (ci < 0.85) return "moderate";
   if (ci < 1.2) return "severe";
   return "extreme";
+}
+
+function caseLabel(c: PeerCrowdingCase): string {
+  if (c === "low") return "low crowding";
+  if (c === "high") return "high crowding";
+  if (c === "custom") return "custom crowding";
+  return "base crowding";
 }
 
 function scaleMix(mix: Record<string, number> | undefined): Levers["crowding_mix"] | null {

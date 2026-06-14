@@ -6,6 +6,7 @@ import type {
   Frame,
   Levers,
   Metrics,
+  ReplayPayload,
   RunConfig,
   RunSource,
   TickEvent,
@@ -13,6 +14,7 @@ import type {
 
 const WS_URL =
   process.env.NEXT_PUBLIC_GATEWAY_WS ?? "ws://127.0.0.1:8000/ws/run";
+const HTTP_BASE = process.env.NEXT_PUBLIC_GATEWAY_HTTP ?? "http://127.0.0.1:8000";
 
 export type RunStatus = "idle" | "connecting" | "running" | "done" | "error";
 
@@ -123,7 +125,33 @@ export function useRun() {
     setState(EMPTY);
   }, [stop]);
 
-  return { state, start, stop, reset };
+  const loadReplay = useCallback(async (ref: string) => {
+    if (!ref) return;
+    setState((s) => ({ ...s, status: "running", message: "Loading selected case…" }));
+    try {
+      const res = await fetch(`${HTTP_BASE}/api/replay?ref=${encodeURIComponent(ref)}`);
+      if (!res.ok) throw new Error("replay_load_failed");
+      const payload = (await res.json()) as ReplayPayload;
+      setState((s) => ({
+        ...s,
+        status: "done",
+        config: payload.config,
+        ticks: payload.ticks,
+        totalTicks: payload.total_ticks,
+        metrics: payload.metrics,
+        message: null,
+        error: null,
+      }));
+    } catch {
+      setState((s) => ({
+        ...s,
+        status: "error",
+        error: "Could not load the selected replay path.",
+      }));
+    }
+  }, []);
+
+  return { state, start, stop, reset, loadReplay };
 }
 
 function reduce(s: RunState, frame: Frame): RunState {

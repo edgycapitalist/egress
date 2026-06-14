@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Play, RotateCcw, Database, Radio, Check, Loader2, AlertCircle } from "lucide-react";
+import {
+  Play,
+  RotateCcw,
+  Database,
+  Radio,
+  Check,
+  Loader2,
+  AlertCircle,
+  Clock,
+  FileSearch,
+  Upload,
+  Users,
+} from "lucide-react";
 import {
   INVESTOR_TYPES,
   INVESTOR_LABELS,
@@ -9,6 +21,8 @@ import {
   TICKER_PRESETS,
   type InvestorType,
   type Levers,
+  type PeerCrowdingProfile,
+  type PeerSourceMode,
 } from "@/lib/types";
 import type { RunStatus } from "@/lib/useRun";
 import { Button } from "@/components/ui/button";
@@ -34,6 +48,30 @@ const EXIT_SPEEDS: { key: string; label: string }[] = [
 // Curated tickers that have a committed cached recording. Any other symbol is live-only.
 const PRESET_SYMBOLS = new Set(TICKER_PRESETS.filter((p) => p.symbol).map((p) => p.symbol));
 const QUICK_PICKS = TICKER_PRESETS.filter((p) => p.symbol);
+
+const DEFAULT_PEER: Partial<PeerCrowdingProfile> = {
+  case: "base",
+  peer_fund_count: 10,
+  overlap_pct: 0.45,
+  avg_peer_position_pct_adv: 0.05,
+  shared_trigger_drawdown_pct: 0.06,
+  correlated_exit_probability: 0.65,
+  leverage_sensitivity: 0.4,
+  redemption_pressure: 0.35,
+  etf_flow_pressure: 0.2,
+  evidence_source: "synthetic_assumption",
+  confidence: "low",
+  notes: "User-edited assumption-led peer-crowding controls.",
+};
+
+const PEER_MODES: { key: PeerSourceMode; label: string; icon: React.ReactNode }[] = [
+  { key: "assumption_led", label: "Assume", icon: <Users className="h-3.5 w-3.5" /> },
+  { key: "sec_evidence", label: "SEC", icon: <FileSearch className="h-3.5 w-3.5" /> },
+  { key: "user_upload", label: "Upload", icon: <Upload className="h-3.5 w-3.5" /> },
+];
+
+const HORIZON_HOURS = [3, 6.5, 12, 24];
+const HORIZON_DAYS = [1, 2, 3, 5];
 
 function Segmented<T extends string>({
   options,
@@ -150,10 +188,88 @@ export function ScenarioBuilder({
     () => INVESTOR_TYPES.reduce((s, t) => s + (levers.crowding_mix[t] ?? 0), 0) || 1,
     [levers.crowding_mix],
   );
+  const peerMode = (levers.peer_source_mode ?? "assumption_led") as PeerSourceMode;
+  const peer = { ...DEFAULT_PEER, ...(levers.peer_crowding ?? {}) };
+  const horizonMode = levers.exit_horizon_hours != null ? "hours" : "days";
+  const horizonValue =
+    horizonMode === "hours"
+      ? (levers.exit_horizon_hours ?? 6.5)
+      : (levers.exit_horizon_days ?? 3);
 
   const set = (patch: Partial<Levers>) => setState({ ...state, levers: { ...levers, ...patch } });
   const setMix = (t: InvestorType, v: number) =>
     set({ crowding_mix: { ...levers.crowding_mix, [t]: v } });
+  const setPeerMode = (mode: PeerSourceMode) => {
+    const patch: Partial<Levers> = { peer_source_mode: mode };
+    if (mode === "assumption_led") {
+      patch.peer_crowding = { ...DEFAULT_PEER, ...(levers.peer_crowding ?? {}) };
+      patch.user_holdings_csv = "";
+    }
+    set(patch);
+  };
+  const setPeer = (patch: Partial<PeerCrowdingProfile>) =>
+    set({
+      peer_crowding: {
+        ...DEFAULT_PEER,
+        ...(levers.peer_crowding ?? {}),
+        ...patch,
+        case: "base",
+        evidence_source: "synthetic_assumption",
+        confidence: "low",
+      },
+    });
+  const setHorizonMode = (mode: "hours" | "days") => {
+    const value = mode === "hours" ? 6.5 : 3;
+    set(
+      mode === "hours"
+        ? {
+            exit_horizon_hours: value,
+            exit_horizon_days: undefined,
+            time_scale: {
+              ...(levers.time_scale ?? {}),
+              session_ticks: levers.time_scale?.session_ticks ?? 100,
+              exit_horizon_hours: value,
+              exit_horizon_days: null,
+            },
+          }
+        : {
+            exit_horizon_days: value,
+            exit_horizon_hours: undefined,
+            time_scale: {
+              ...(levers.time_scale ?? {}),
+              session_ticks: levers.time_scale?.session_ticks ?? 100,
+              exit_horizon_days: value,
+              exit_horizon_hours: null,
+            },
+          },
+    );
+  };
+  const setHorizonValue = (value: number) => {
+    const next = Math.max(0.25, value || 0.25);
+    set(
+      horizonMode === "hours"
+        ? {
+            exit_horizon_hours: next,
+            exit_horizon_days: undefined,
+            time_scale: {
+              ...(levers.time_scale ?? {}),
+              session_ticks: levers.time_scale?.session_ticks ?? 100,
+              exit_horizon_hours: next,
+              exit_horizon_days: null,
+            },
+          }
+        : {
+            exit_horizon_days: next,
+            exit_horizon_hours: undefined,
+            time_scale: {
+              ...(levers.time_scale ?? {}),
+              session_ticks: levers.time_scale?.session_ticks ?? 100,
+              exit_horizon_days: next,
+              exit_horizon_hours: null,
+            },
+          },
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -369,6 +485,161 @@ export function ScenarioBuilder({
           </Caption>
         </div>
 
+        {/* Exit horizon */}
+        <div className={cn("space-y-2", cached && "pointer-events-none opacity-55")}>
+          <Label>Exit horizon</Label>
+          <Segmented
+            options={[
+              { key: "days", label: "Days", icon: <Clock className="h-3.5 w-3.5" /> },
+              { key: "hours", label: "Hours", icon: <Clock className="h-3.5 w-3.5" /> },
+            ]}
+            value={horizonMode}
+            onChange={setHorizonMode}
+            disabled={busy}
+          />
+          <div className="grid grid-cols-[1fr_auto] gap-2">
+            <input
+              type="number"
+              min={0.25}
+              step={horizonMode === "hours" ? 0.5 : 0.25}
+              value={horizonValue}
+              onChange={(e) => setHorizonValue(Number(e.target.value))}
+              disabled={busy}
+              className={cn(
+                "tnum w-full rounded-[8px] border border-line bg-surface-2/60 px-3 py-2 text-[12.5px] text-ink focus:border-line-strong focus:outline-none",
+                busy && "opacity-55",
+              )}
+            />
+            <span className="flex min-w-16 items-center justify-center rounded-[8px] border border-line bg-surface-2/40 px-3 text-[11px] text-ink-faint">
+              {horizonMode}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(horizonMode === "hours" ? HORIZON_HOURS : HORIZON_DAYS).map((v) => (
+              <button
+                key={v}
+                disabled={busy}
+                onClick={() => setHorizonValue(v)}
+                className={cn(
+                  "rounded-[6px] border px-2 py-1 text-[11px] transition-colors",
+                  Math.abs(horizonValue - v) < 0.01
+                    ? "border-line-strong bg-ink text-bg"
+                    : "border-line bg-surface-2/60 text-ink-muted hover:text-ink",
+                )}
+              >
+                <span className="tnum">{v}</span>
+              </button>
+            ))}
+          </div>
+          <Caption>
+            The engine uses 100 ticks per average-volume session. This converts the clock horizon
+            into ticks, so a three-day exit has three sessions to complete.
+          </Caption>
+        </div>
+
+        <Divider />
+
+        {/* Peer crowding */}
+        <div className={cn("space-y-3", cached && "pointer-events-none opacity-55")}>
+          <div className="space-y-2">
+            <Label>Peer crowding</Label>
+            <Segmented
+              options={PEER_MODES}
+              value={peerMode}
+              onChange={setPeerMode}
+              disabled={busy}
+            />
+            <Caption>{peerModeCaption(peerMode)}</Caption>
+          </div>
+
+          {peerMode === "user_upload" ? (
+            <div className="space-y-1.5">
+              <textarea
+                value={levers.user_holdings_csv ?? ""}
+                onChange={(e) => set({ user_holdings_csv: e.target.value })}
+                disabled={busy}
+                rows={4}
+                className={cn(
+                  "w-full resize-none rounded-[8px] border border-line bg-surface-2/60 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none",
+                  busy && "opacity-55",
+                )}
+                placeholder={"symbol,manager,shares\nCVNA,Alpha Fund,1000000"}
+              />
+              <Caption>
+                Rows can include symbol, manager, shares, pct_adv, leverage_sensitivity, and
+                redemption_pressure. Uploaded evidence overrides SEC or synthetic assumptions.
+              </Caption>
+            </div>
+          ) : null}
+
+          {peerMode === "assumption_led" ? (
+            <div className="space-y-2.5">
+              <Slider
+                label="Peer funds"
+                display={`${Math.round(Number(peer.peer_fund_count ?? 0))} funds`}
+                min={0}
+                max={40}
+                step={1}
+                value={Number(peer.peer_fund_count ?? 0)}
+                onChange={(v) => setPeer({ peer_fund_count: v })}
+              />
+              <Slider
+                label="Overlap"
+                display={fmtPct(Number(peer.overlap_pct ?? 0), 0)}
+                min={0}
+                max={1}
+                step={0.01}
+                value={Number(peer.overlap_pct ?? 0)}
+                onChange={(v) => setPeer({ overlap_pct: v })}
+              />
+              <Slider
+                label="Avg peer size"
+                display={`${fmtPct(Number(peer.avg_peer_position_pct_adv ?? 0), 1)} ADV`}
+                min={0}
+                max={0.2}
+                step={0.005}
+                value={Number(peer.avg_peer_position_pct_adv ?? 0)}
+                onChange={(v) => setPeer({ avg_peer_position_pct_adv: v })}
+              />
+              <Slider
+                label="Shared trigger"
+                display={`${fmtPct(Number(peer.shared_trigger_drawdown_pct ?? 0), 1)} drawdown`}
+                min={0.01}
+                max={0.15}
+                step={0.005}
+                value={Number(peer.shared_trigger_drawdown_pct ?? 0)}
+                onChange={(v) => setPeer({ shared_trigger_drawdown_pct: v })}
+              />
+              <Slider
+                label="Correlated exit"
+                display={fmtPct(Number(peer.correlated_exit_probability ?? 0), 0)}
+                min={0}
+                max={1}
+                step={0.01}
+                value={Number(peer.correlated_exit_probability ?? 0)}
+                onChange={(v) => setPeer({ correlated_exit_probability: v })}
+              />
+              <div className="grid grid-cols-1 gap-2">
+                <MiniSlider
+                  label="Leverage"
+                  value={Number(peer.leverage_sensitivity ?? 0)}
+                  onChange={(v) => setPeer({ leverage_sensitivity: v })}
+                />
+                <MiniSlider
+                  label="Redemptions"
+                  value={Number(peer.redemption_pressure ?? 0)}
+                  onChange={(v) => setPeer({ redemption_pressure: v })}
+                />
+                <MiniSlider
+                  label="ETF flows"
+                  value={Number(peer.etf_flow_pressure ?? 0)}
+                  onChange={(v) => setPeer({ etf_flow_pressure: v })}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <Divider />
 
         {/* Crowding mix */}
@@ -424,6 +695,41 @@ function Label({ children, hint }: { children: React.ReactNode; hint?: string })
 
 function Caption({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] leading-relaxed text-ink-faint">{children}</p>;
+}
+
+function MiniSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[74px_1fr_38px] items-center gap-2">
+      <span className="text-[11px] text-ink-faint">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.01}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className="tnum text-right text-[11px] text-ink-muted">{fmtPct(value, 0)}</span>
+    </div>
+  );
+}
+
+function peerModeCaption(mode: PeerSourceMode): string {
+  if (mode === "sec_evidence") {
+    return "Uses free public SEC EDGAR evidence when enabled, then falls back to curated or synthetic assumptions with labels.";
+  }
+  if (mode === "user_upload") {
+    return "Uses your uploaded holder rows first, so private or desk-curated evidence can drive the peer profile.";
+  }
+  return "Uses explicit low-confidence assumptions you can edit. Good for exploring where the exit breaks without paid data.";
 }
 
 // Honest, mode/symbol/AV-aware description of what running this instrument will do.

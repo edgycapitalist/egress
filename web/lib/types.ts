@@ -29,6 +29,12 @@ export type ScenarioMode =
   | "sec_evidence"
   | "user_upload";
 export type PeerCrowdingCase = "low" | "base" | "high" | "custom";
+export type PeerSourceMode =
+  | "auto"
+  | "assumption_led"
+  | "sec_evidence"
+  | "user_upload"
+  | "curated_fixture";
 
 export interface EvidenceItem {
   field: string;
@@ -188,6 +194,14 @@ export interface EnsembleResult {
 
 export type RunSource = "cached" | "live-baseline" | "live-gemini";
 
+export interface ReplayPayload {
+  schema_version: string | null;
+  config: RunConfig;
+  total_ticks: number;
+  ticks: TickEvent[];
+  metrics: Metrics | null;
+}
+
 // Server → client frames.
 export type Frame =
   | { type: "meta"; source: RunSource; schema_version: string; config: RunConfig; total_ticks: number }
@@ -207,7 +221,7 @@ export interface Levers {
   population_size: number;
   exit_speed: string;
   crowding_mix: Record<InvestorType, number>;
-  peer_source_mode?: "auto" | "assumption_led" | "sec_evidence" | "user_upload" | "curated_fixture";
+  peer_source_mode?: PeerSourceMode;
   peer_crowding?: Partial<PeerCrowdingProfile>;
   user_holdings_csv?: string;
   time_scale?: Partial<TimeScale>;
