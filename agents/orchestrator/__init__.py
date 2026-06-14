@@ -10,6 +10,7 @@ from agents.orchestrator.agent import build_orchestrator, build_simulate_loop
 from agents.orchestrator.driver import (
     run_baseline_ensemble,
     run_baseline_simulation,
+    run_detailed_live_ensemble,
     run_live_simulation,
 )
 
@@ -18,5 +19,6 @@ __all__ = [
     "build_simulate_loop",
     "run_baseline_ensemble",
     "run_baseline_simulation",
+    "run_detailed_live_ensemble",
     "run_live_simulation",
 ]

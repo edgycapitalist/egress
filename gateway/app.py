@@ -312,8 +312,8 @@ async def _run_live(
     """Drive a fresh run. Returns (replay_path, source, analysis, ensemble)."""
     from agents.orchestrator.driver import (  # lazy: keeps cached path import-light
         run_baseline_ensemble,
+        run_detailed_live_ensemble,
         run_fast_live_ensemble,
-        run_live_simulation,
     )
 
     from gateway.crisis import derive_crisis_intensity
@@ -340,10 +340,14 @@ async def _run_live(
         )
         requested_mode = str(requested_mode).strip().lower().replace("-", "_")
         if requested_mode in {"detailed", "ai_detailed", "full"}:
-            await send("Running detailed Gemini stance-refresh simulation…")
-            result = await run_live_simulation(scenario_prompt(levers))
-            source = "live-gemini"
-            ensemble = None
+            await send("Generating detailed Gemini assumptions, then running the ensemble…")
+            result = await run_detailed_live_ensemble(
+                scenario_prompt(levers),
+                fallback_config=config,
+                timeout_seconds=gemini_timeout_seconds(),
+            )
+            source = "live-baseline" if result.get("fallback_reason") else "live-gemini"
+            ensemble = result.get("ensemble_result")
         else:
             await send("Generating Gemini assumptions, then running the ensemble…")
             result = await run_fast_live_ensemble(

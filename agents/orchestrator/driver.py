@@ -10,8 +10,12 @@ orchestrator for the requested mode, seeds the ADK session state, runs the
   offline test suite and for cost-free development. Defaults to the flagship scenario.
 * ``run_baseline_ensemble(config)`` — deterministic low/base/high peer-crowding
   ensemble with a representative replay.
-* ``run_live_simulation(scenario_raw)`` — the product path: real Gemini calls through
-  Vertex AI. Requires valid ADC + project (validated up front).
+* ``run_fast_live_ensemble(scenario_raw, fallback_config=...)`` — Gemini scenario
+  assumptions once, then deterministic low/base/high ensemble.
+* ``run_detailed_live_ensemble(scenario_raw, fallback_config=...)`` — the gateway's
+  detailed Gemini path, still returning the deterministic ensemble as authoritative.
+* ``run_live_simulation(scenario_raw)`` — legacy/CLI full ADK single-run path with
+  Gemini archetypes. Requires valid ADC + project (validated up front).
 
 The driver guarantees the per-run engine handle is closed even if the run errors.
 """
@@ -305,6 +309,33 @@ async def run_fast_live_ensemble(
     )
     result["fallback_reason"] = fallback_reason
     result["scenario_config"] = config.model_dump()
+    return result
+
+
+async def run_detailed_live_ensemble(
+    scenario_raw: str,
+    *,
+    fallback_config: RunConfig | None = None,
+    timeout_seconds: float | None = None,
+    seeds: list[int] | None = None,
+    replay_dir: str = "runs",
+) -> dict[str, Any]:
+    """Detailed gateway mode with Gemini judgment and ensemble-safe output.
+
+    The older detailed path returned one full Gemini-driven ADK run. For Phase 1 the
+    product contract is stricter: detailed mode may use Gemini for judgment, but the
+    low/base/high deterministic ensemble remains the authoritative output. This keeps
+    live modes comparable and avoids running six archetype agents for every ensemble
+    case and seed.
+    """
+    result = await run_fast_live_ensemble(
+        scenario_raw,
+        fallback_config=fallback_config,
+        timeout_seconds=timeout_seconds,
+        seeds=seeds,
+        replay_dir=replay_dir,
+    )
+    result["gemini_mode"] = "detailed_ensemble"
     return result
 
 

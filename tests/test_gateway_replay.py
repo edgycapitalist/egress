@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import gateway.app as gateway_app
 import pytest
 from fastapi.testclient import TestClient
 from gateway.app import app
@@ -90,6 +91,61 @@ def test_cached_websocket_run_offline() -> None:
     assert ensemble and ensemble["type"] == "ensemble"
     assert ensemble["evidence_summary"] is not None
     assert analysis and symbol in analysis  # the analyst names the replay's instrument
+
+
+@pytest.mark.asyncio
+async def test_detailed_gemini_live_routes_to_ensemble(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_detailed(prompt: str, *, fallback_config, timeout_seconds):
+        captured["prompt"] = prompt
+        captured["fallback_config"] = fallback_config
+        assert fallback_config.peer_crowding is not None
+        assert fallback_config.evidence_summary is not None
+        return {
+            "error": None,
+            "fallback_reason": None,
+            "representative_replay_ref": str(FLAGSHIP),
+            "analysis": "ensemble narrative",
+            "ensemble_result": {
+                "type": "ensemble",
+                "run_id": "detailed-ensemble",
+                "cases": [],
+                "bands": {},
+                "representative_case": "base",
+                "representative_replay_ref": str(FLAGSHIP),
+                "evidence_summary": fallback_config.evidence_summary.model_dump(),
+            },
+            "scenario_config": fallback_config.model_dump(),
+        }
+
+    monkeypatch.setattr(gateway_app, "_gemini_enabled", lambda: True)
+    monkeypatch.setattr(
+        "agents.orchestrator.driver.run_detailed_live_ensemble", fake_detailed
+    )
+
+    replay_ref, source, analysis, ensemble = await gateway_app._run_live(
+        {
+            "symbol": "CVNA",
+            "scenario_text": "CVNA faces a severe creditor shock.",
+            "peer_source_mode": "assumption_led",
+            "peer_crowding": {
+                "peer_fund_count": 3,
+                "overlap_pct": 0.2,
+                "avg_peer_position_pct_adv": 0.03,
+                "shared_trigger_drawdown_pct": 0.07,
+                "correlated_exit_probability": 0.4,
+            },
+        },
+        True,
+        "detailed",
+    )
+
+    assert Path(replay_ref).exists()
+    assert source == "live-gemini"
+    assert analysis == "ensemble narrative"
+    assert ensemble is not None and ensemble["type"] == "ensemble"
+    assert "Peer-crowding evidence" in str(captured["prompt"])
 
 
 def test_health_endpoint() -> None:
