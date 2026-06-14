@@ -8,7 +8,7 @@ Egress simulates how an investment position would behave in a crisis sell-off, b
 
 **<https://egress-frontend-978090004115.us-central1.run.app>**
 
-Cached mode replays a **recorded** CVNA cascade instantly — no keys, no cloud. A live run re-runs the deterministic engine; ticking *Use real Gemini (Vertex AI)* has the six archetype agents set by Gemini instead (about a minute or two).
+Cached mode replays a **recorded** CVNA cascade instantly — no keys, no cloud. A live run re-runs the deterministic ensemble; ticking *Use real Gemini (Vertex AI)* now uses Gemini once up front to build scenario assumptions, then runs the deterministic low/base/high ensemble with timeout fallback.
 
 > The hosted URL runs the deployed build. The instrument picker and the live Alpha Vantage path described below are on the `dev` branch and run locally.
 
@@ -32,7 +32,7 @@ The defining design choice is that the language model is one part of the system,
 2. **A deterministic NumPy population acts on those stances.** Thousands of lightweight agents live as rows in NumPy arrays, parameterised by their type's current stance. Staggered per-agent thresholds decide who sells and when, which is what produces a cascade rather than a single synchronised dump.
 3. **An order-book engine matches the orders.** A real price-time-priority limit order book (`engine/orderbook/book.py`) matches each tick: a sell sweeps the highest resting bids first and fills at the bid price until the order is exhausted. Fill rate, slippage, stuck percentage and drawdown are computed from the **actual matched quantities and traded prices** — not a price-impact formula — and a single-stock volatility halt is a fixed band rule. Each run is recorded to an NDJSON replay stream. Two honest caveats: liquidity is **re-posted every tick** (resting orders do not persist across ticks — each tick is a fresh auction against newly-posted orders), and the price is the last traded level **plus an exogenous shock gap** the scenario applies at scheduled ticks.
 
-**What the model does — and doesn't.** In a live Gemini run, each archetype agent sets three scalars for its investor type — aggressiveness, sell-threshold, participation — which are clamped to the contract's `Stance` ranges before the engine reads them. The model tunes the crowd's *mood*; it does not add any market mechanic the deterministic baseline lacks. The analyst and the calibration critic produce the plain-language narrative and the fidelity verdict — judgement and explanation, not the numbers. In the app, a plain **Live** run uses the deterministic stances; only with *Use real Gemini* checked do the LLM stances drive the run. Remove every Gemini call and the engine still produces a full simulation — the baseline mode the test suite and offline demos run on.
+**What the model does — and doesn't.** In the app's default live Gemini mode, Gemini builds the scenario assumptions once — the crisis schedule and crowd mood read — and Egress then runs the deterministic low/base/high ensemble without per-window model calls. The slower detailed ADK path can still have each archetype agent set three scalars for its investor type — aggressiveness, sell-threshold, participation — clamped to the contract's `Stance` ranges before the engine reads them. Either way, the model tunes assumptions and explanation; it does not add any market mechanic the deterministic baseline lacks. Remove every Gemini call and the engine still produces a full simulation — the baseline mode the test suite and offline demos run on.
 
 ### System architecture
 
@@ -109,10 +109,10 @@ Open <http://localhost:3000>. The frontend defaults to the gateway at `ws://127.
 gcloud auth application-default login
 # in .env: set GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION (GOOGLE_GENAI_USE_VERTEXAI=true is the default)
 make auth-check    # makes one real Gemini call to confirm auth and quota
-make demo-live     # the full ADK pipeline against real Gemini via Vertex AI
+make demo-live     # the detailed ADK pipeline against real Gemini via Vertex AI
 ```
 
-To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_LIVE_GEMINI=true make gateway`; otherwise a live run in the UI uses the deterministic stances. Gemini is reached only through Vertex AI with Application Default Credentials; an AI Studio `GOOGLE_API_KEY` is never used. The full configuration is documented in [`.env.example`](./.env.example).
+To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_LIVE_GEMINI=true make gateway`; otherwise a live run in the UI uses deterministic assumptions. The gateway defaults to `EGRESS_GEMINI_LIVE_MODE=fast`: Gemini builds assumptions once, then the deterministic ensemble runs. Set `EGRESS_GEMINI_LIVE_MODE=detailed` only when you want the slower per-window archetype refresh path. If assumption generation exceeds `EGRESS_GEMINI_TIMEOUT_SECONDS`, the gateway falls back to deterministic assumptions and still returns a usable ensemble. Gemini is reached only through Vertex AI with Application Default Credentials; an AI Studio `GOOGLE_API_KEY` is never used. The full configuration is documented in [`.env.example`](./.env.example).
 
 ## Tech stack
 
@@ -148,7 +148,7 @@ What is **not** real data, stated plainly:
 - **There is no order-book / Level 2 feed.** The book's depth is built from the simulated agent population: each agent's quote size (`size_base`) and holdings scale with the instrument's real ADV (`liq_unit = adv / population_size`) and are capped by free float (`engine/population/population.py`). Real ADV sets the *scale* of depth; the depth itself is synthesized, not observed.
 - **Free-tier history is ~100 days.** `outputsize=full` is premium, so historical crisis windows (CVNA late-2022, SVB March-2023) cannot be fetched. **Cached** mode therefore replays committed recordings of those episodes (a historical *reference*), while a **live** run uses the instrument's current ~100-day data and does **not** reproduce the historical crisis.
 
-The news MCP server calls `NEWS_SENTIMENT` for real headlines, used only by the live Gemini archetypes; it falls back to a deterministic synthetic crisis tape otherwise.
+The news MCP server calls `NEWS_SENTIMENT` for real headlines, used by the live Gemini assumption/detailed archetype paths; it falls back to a deterministic synthetic crisis tape otherwise.
 
 When no key is present, SEC is disabled, or a call is rate-limited/errors, every feed falls back to a **deterministic synthetic** version — seeded by the symbol — so `make test`, `make demo`, and `make demo-agents` run fully offline and reproducibly with no credentials.
 

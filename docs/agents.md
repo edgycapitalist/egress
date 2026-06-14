@@ -42,8 +42,13 @@ thousands of agents cheap.
 
 ## Live vs. baseline — one tree, two seams
 
-The **live Vertex/Gemini path is the product.** Baseline is the swappable
-offline/test mode, and it swaps exactly two seams:
+The **live Vertex/Gemini path is the product**, but the interactive gateway now
+defaults to a fast-live strategy: Gemini builds assumptions once through the
+Scenario Author, then the deterministic low/base/high ensemble runs without
+per-window stance refresh. The detailed ADK tree below still exists for CLI/demo
+paths and for runs where `EGRESS_GEMINI_LIVE_MODE=detailed`.
+
+Baseline is the swappable offline/test mode, and it swaps exactly two seams:
 
 | Seam | Live | Baseline |
 | --- | --- | --- |
@@ -57,6 +62,23 @@ baseline mode the whole pipeline runs with **zero LLM calls** — this is the
 (`tests/test_orchestrator_baseline.py`, `make demo-agents`). There is **no mock
 model in the live path**: once Vertex auth is in place (`make auth-check`), the
 `LlmAgent`s make real Gemini calls with no further wiring.
+
+### Fast-live latency control
+
+`agents.orchestrator.driver.run_fast_live_ensemble()` is the default gateway path
+when the request has `gemini: true` and Vertex is configured. It runs only the
+Scenario Author under a timeout (`EGRESS_GEMINI_TIMEOUT_SECONDS`, default `45`),
+merges Gemini's shock/crowd assumptions with the deterministic UI/evidence config
+(instrument, position size, exit speed, peer-crowding profile, time scale, and
+crisis scalar), then executes the deterministic ensemble. If Scenario Author
+times out or errors, the gateway records a `fallback` timing event and returns
+the deterministic ensemble instead of failing the user-facing run.
+
+Latency instrumentation is attached to ADK agent callbacks (`before_agent`,
+`after_agent`), model callbacks (`before_model`, `after_model`), tool callbacks,
+and engine-window advancement. The driver returns a non-user-facing
+`timing_report` with call counts, wall times, token usage when ADK exposes it,
+tool cache-hit counts, fallback count, and simulation-window count.
 
 ## The firewall
 

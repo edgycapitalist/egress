@@ -56,10 +56,13 @@ between tick batches animates the cascade at a watchable speed.
   **deterministic ensemble** path: low/base/high peer-crowding cases over fixed
   deterministic seeds, with the base case's representative replay used for the
   animation and an `ensemble` frame carrying the outcome ranges. With `gemini:
-  true` and Vertex configured (`EGRESS_LIVE_GEMINI=true` + ADC), it runs the
-  **real Gemini** pipeline. The `source` field on the `meta` frame (`cached` /
-  `live-baseline` / `live-gemini`) tells the UI which ran, so the product is
-  always honest about whether a model was in the loop.
+  true` and Vertex configured (`EGRESS_LIVE_GEMINI=true` + ADC), the default
+  fast-live mode asks Gemini to build assumptions once, then runs the same
+  deterministic ensemble. Set `EGRESS_GEMINI_LIVE_MODE=detailed` only for the
+  slower per-window archetype-refresh path. The `source` field on the `meta`
+  frame (`cached` / `live-baseline` / `live-gemini`) tells the UI which ran; if
+  Gemini times out, the gateway falls back to `live-baseline` rather than failing
+  the run.
 
 `gateway/run_config.py` folds the flat UI levers (position size, exit speed,
 crowding mix) onto the flagship scenario and validates the result against
