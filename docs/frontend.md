@@ -22,9 +22,17 @@ on, surfaced to the screen.
 
 ## The gateway
 
-`gateway/app.py` is a FastAPI app with one WebSocket endpoint, `/ws/run`, and two
-small REST helpers (`/api/health`, `/api/scenario/defaults`). A client opens the
-socket and sends one request frame:
+`gateway/app.py` is a FastAPI app with one WebSocket endpoint, `/ws/run`, and a
+few small REST helpers:
+
+* `/api/health` and `/api/scenario/defaults` for bootstrapping.
+* `/api/instrument` for the exact market-data inputs a run used.
+* `/api/positioning` for peer-crowding evidence previews.
+* `/api/replay?ref=...` for loading a selected ensemble case's representative
+  NDJSON path. This endpoint is restricted to `runs/` and committed
+  `docs/replays/` files.
+
+A client opens the socket and sends one request frame:
 
 ```jsonc
 { "mode": "cached" | "live", "gemini": false, "scenario": { …levers… }, "pace_ms": 110 }
@@ -34,13 +42,14 @@ The server replies with an ordered stream of frames:
 
 | Frame | Payload | Notes |
 | --- | --- | --- |
-| `meta` | `source`, `schema_version`, `config`, `total_ticks` | first |
+| `status` | `message` | progress phase, optional before/among data frames |
+| `meta` | `source`, `schema_version`, `config`, `total_ticks` | run config |
 | `ticks` | `ticks: TickEvent[]` | **batched** (default 4/frame), repeated |
 | `metrics` | `metrics: Metrics` | once |
 | `ensemble` | `ensemble: EnsembleResult` | live deterministic ensemble only |
 | `analysis` | `analysis: str` | the plain-language narrative |
 | `done` | — | terminal |
-| `status` / `error` | `message` | progress / clean failure |
+| `error` | `message` | clean failure |
 
 **Batching is the gateway's job** (AGENTS.md §3): a 300-tick run becomes a handful
 of socket writes, not 300 — the thundering-herd lesson. A small `pace_ms` dwell
@@ -83,8 +92,9 @@ for buying and fills, amber for a volatility halt. Every number is tabular mono.
 Panels:
 
 * **Scenario builder** (`scenario-builder.tsx`) — the plain-language position and
-  stress event, plus the levers: position size, exit speed, and a per-type
-  crowding mix. The cached/live toggle lives here.
+  stress event, plus the levers: position size, exit speed, exit horizon, peer
+  crowding source mode, assumption-led peer controls, optional holdings CSV, and
+  a per-type behavioural crowding mix. The cached/live toggle lives here.
 * **Price path** (`price-chart.tsx`) — the cascade as an SVG line over the run,
   with the arrival-price reference, shaded **halt bands**, and shock markers. The
   demo centrepiece.
@@ -93,13 +103,18 @@ Panels:
   price break is legible at a glance.
 * **Order book** (`order-book.tsx`) — bid/ask depth draining, the spread, and a
   sparkline of buy-side support collapsing.
-* **Fill progress**, **Outcome metrics** (fill rate, slippage, drawdown, % stuck,
-  time to exit, halts), and the **analyst explanation**.
+* **Run progress** — evidence, assumption, simulation, and analysis phases from
+  gateway status frames and result frames.
+* **Fill progress**, **Outcome range** (low/base/high crowding cards, worst seed
+  band, selected representative path metrics), **Evidence** (source and
+  confidence labels), and the **analyst explanation**.
 
 `lib/useRun.ts` owns the WebSocket lifecycle and reduces the streamed frames into
 render-ready state; ticks are appended as batches arrive so the visualisation
-animates live. The gateway URL is configurable via `NEXT_PUBLIC_GATEWAY_WS` /
-`NEXT_PUBLIC_GATEWAY_HTTP` (see `web/.env.example`).
+animates live. It can also load a selected case's replay from `/api/replay` so the
+price path and order-book panels follow the low/base/high selector. The gateway
+URL is configurable via `NEXT_PUBLIC_GATEWAY_WS` / `NEXT_PUBLIC_GATEWAY_HTTP` (see
+`web/.env.example`).
 
 ## Running it
 
