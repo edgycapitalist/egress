@@ -35,11 +35,23 @@ def test_frames_order_and_batching() -> None:
     assert kinds[0] == "meta"
     assert kinds[-1] == "done"
     assert "metrics" in kinds and "analysis" in kinds  # sidecar narrative present
+    assert "ensemble" not in kinds  # cached replay mode remains a single recorded path
     # Every tick is delivered exactly once across the batches.
     _, ticks, _ = read_records(FLAGSHIP)
     streamed = [t for f in frames if f["type"] == "ticks" for t in f["ticks"]]
     assert len(streamed) == len(ticks)
     assert frames[0]["total_ticks"] == len(ticks)
+
+
+def test_frames_can_include_ensemble_without_changing_replay_order() -> None:
+    ensemble = {"type": "ensemble", "run_id": "e-1", "cases": [], "bands": {}}
+    frames = list(
+        frames_from_replay(FLAGSHIP, source="live-baseline", batch_size=100, ensemble=ensemble)
+    )
+    kinds = [f["type"] for f in frames]
+    assert kinds.index("ensemble") > kinds.index("metrics")
+    assert kinds[-1] == "done"
+    assert next(f for f in frames if f["type"] == "ensemble")["ensemble"] == ensemble
 
 
 def test_cached_websocket_run_offline() -> None:

@@ -37,6 +37,7 @@ The server replies with an ordered stream of frames:
 | `meta` | `source`, `schema_version`, `config`, `total_ticks` | first |
 | `ticks` | `ticks: TickEvent[]` | **batched** (default 4/frame), repeated |
 | `metrics` | `metrics: Metrics` | once |
+| `ensemble` | `ensemble: EnsembleResult` | live deterministic ensemble only |
 | `analysis` | `analysis: str` | the plain-language narrative |
 | `done` | — | terminal |
 | `status` / `error` | `message` | progress / clean failure |
@@ -51,14 +52,14 @@ between tick batches animates the cascade at a watchable speed.
   `*.analysis.txt` sidecar. It reads only the standard library — no engine, no
   agents, no cloud — so the demo runs end to end **offline** and identically every
   time. This is the reliability mechanism for judging.
-* **Live** drives the ADK orchestrator now via `agents/orchestrator/driver.py`,
-  records a fresh NDJSON, then streams it. By default it runs the **deterministic
-  baseline** lifecycle (a real ADK `SequentialAgent` run, zero LLM cost,
-  offline-safe), so the scenario builder's levers drive a genuinely new
-  simulation. With `gemini: true` and Vertex configured (`EGRESS_LIVE_GEMINI=true`
-  + ADC), it runs the **real Gemini** pipeline. The `source` field on the `meta`
-  frame (`cached` / `live-baseline` / `live-gemini`) tells the UI which ran, so the
-  product is always honest about whether a model was in the loop.
+* **Live** records a fresh NDJSON, then streams it. By default it runs the
+  **deterministic ensemble** path: low/base/high peer-crowding cases over fixed
+  deterministic seeds, with the base case's representative replay used for the
+  animation and an `ensemble` frame carrying the outcome ranges. With `gemini:
+  true` and Vertex configured (`EGRESS_LIVE_GEMINI=true` + ADC), it runs the
+  **real Gemini** pipeline. The `source` field on the `meta` frame (`cached` /
+  `live-baseline` / `live-gemini`) tells the UI which ran, so the product is
+  always honest about whether a model was in the loop.
 
 `gateway/run_config.py` folds the flat UI levers (position size, exit speed,
 crowding mix) onto the flagship scenario and validates the result against

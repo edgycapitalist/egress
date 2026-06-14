@@ -147,21 +147,25 @@ def _gemini_enabled() -> bool:
         return False
 
 
-async def _run_live(levers: dict[str, Any], use_gemini: bool) -> tuple[str, str, str | None]:
-    """Drive the orchestrator for a fresh run. Returns (replay_path, source, analysis)."""
+async def _run_live(
+    levers: dict[str, Any], use_gemini: bool
+) -> tuple[str, str, str | None, dict[str, Any] | None]:
+    """Drive a fresh run. Returns (replay_path, source, analysis, ensemble)."""
     from agents.orchestrator.driver import (  # lazy: keeps cached path import-light
-        run_baseline_simulation,
+        run_baseline_ensemble,
         run_live_simulation,
     )
 
     if use_gemini and _gemini_enabled():
         result = await run_live_simulation(scenario_prompt(levers))
         source = "live-gemini"
+        ensemble = None
     else:
         # A live run pulls the instrument's real Alpha Vantage data and derives the
         # crisis magnitude from the typed stress text + the instrument's real news
-        # (synthetic fallback when no key), so the description genuinely drives the
-        # outcome even on the no-LLM path. Budget-guarded; cached per symbol+period.
+        # (synthetic fallback when no key), then runs low/base/high peer-crowding
+        # cases over fixed deterministic seeds. The representative replay animates
+        # exactly like the old single run; the ensemble frame carries the ranges.
         from gateway.crisis import derive_crisis_intensity
 
         text = str(levers.get("scenario_text") or "")
@@ -169,15 +173,16 @@ async def _run_live(levers: dict[str, Any], use_gemini: bool) -> tuple[str, str,
             text, levers.get("symbol"), fetch_news=True
         )
         config = build_run_config(levers, live_data=True, crisis_intensity=intensity)
-        result = await run_baseline_simulation(config)
+        result = await run_baseline_ensemble(config)
         source = "live-baseline"
+        ensemble = result.get("ensemble_result")
 
     if result.get("error"):
         raise RuntimeError(str(result["error"]))
-    replay_ref = result.get("replay_ref")
+    replay_ref = result.get("representative_replay_ref") or result.get("replay_ref")
     if not replay_ref or not Path(replay_ref).exists():
         raise RuntimeError("live run produced no replay")
-    return replay_ref, source, result.get("analysis")
+    return replay_ref, source, result.get("analysis"), ensemble
 
 
 async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
@@ -187,9 +192,11 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
     levers = request.get("scenario") or {}
 
     if mode == "live":
-        await ws.send_json({"type": "status", "message": "Running the simulation…"})
+        await ws.send_json({"type": "status", "message": "Running the simulation ensemble…"})
         try:
-            replay_path, source, analysis = await _run_live(levers, bool(request.get("gemini")))
+            replay_path, source, analysis, ensemble = await _run_live(
+                levers, bool(request.get("gemini"))
+            )
         except Exception as exc:  # surface a clean error frame, never a stack trace
             await ws.send_json({"type": "error", "message": f"Live run failed: {exc}"})
             return
@@ -198,10 +205,14 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         if not replay_file.exists():
             await ws.send_json({"type": "error", "message": "Flagship replay not found."})
             return
-        replay_path, source, analysis = str(replay_file), "cached", None
+        replay_path, source, analysis, ensemble = str(replay_file), "cached", None, None
 
     for frame in frames_from_replay(
-        replay_path, source=source, batch_size=batch_size, analysis=analysis
+        replay_path,
+        source=source,
+        batch_size=batch_size,
+        analysis=analysis,
+        ensemble=ensemble,
     ):
         await ws.send_json(frame)
         # Pace the ticks for the animation; give the trailing frames (metrics /

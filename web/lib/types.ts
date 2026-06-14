@@ -193,6 +193,7 @@ export type Frame =
   | { type: "meta"; source: RunSource; schema_version: string; config: RunConfig; total_ticks: number }
   | { type: "ticks"; ticks: TickEvent[] }
   | { type: "metrics"; metrics: Metrics }
+  | { type: "ensemble"; ensemble: EnsembleResult }
   | { type: "analysis"; analysis: string }
   | { type: "status"; message: string }
   | { type: "error"; message: string }

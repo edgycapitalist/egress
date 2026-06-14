@@ -8,6 +8,8 @@ orchestrator for the requested mode, seeds the ADK session state, runs the
 
 * ``run_baseline_simulation(config)`` — deterministic, no LLM, no cloud. Used by the
   offline test suite and for cost-free development. Defaults to the flagship scenario.
+* ``run_baseline_ensemble(config)`` — deterministic low/base/high peer-crowding
+  ensemble with a representative replay.
 * ``run_live_simulation(scenario_raw)`` — the product path: real Gemini calls through
   Vertex AI. Requires valid ADC + project (validated up front).
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from engine.ensemble import run_ensemble
 from engine.schema import RunConfig
 from google.adk.runners import InMemoryRunner
 from google.genai import types
@@ -99,6 +102,35 @@ async def run_baseline_simulation(
     if adjustments:
         initial_state[CALIBRATION_ADJUSTMENTS] = adjustments
     return await _execute(orchestrator, initial_state, message="Run the baseline simulation.")
+
+
+async def run_baseline_ensemble(
+    config: RunConfig | None = None,
+    *,
+    seeds: list[int] | None = None,
+    replay_dir: str = "runs",
+) -> dict[str, Any]:
+    """Run the deterministic low/base/high ensemble and return gateway-ready refs."""
+    if config is None:
+        from engine.scenarios import flagship_scenario
+
+        config = flagship_scenario(seed=seed())
+    config = config.model_copy(update={"baseline_mode": True})
+    try:
+        ensemble = run_ensemble(config, replay_dir=replay_dir, seeds=seeds)
+        return {
+            "run_id": ensemble.run_id,
+            "ensemble_result": ensemble.model_dump(),
+            "representative_replay_ref": ensemble.representative_replay_ref,
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "run_id": config.run_id,
+            "ensemble_result": None,
+            "representative_replay_ref": None,
+            "error": str(exc),
+        }
 
 
 async def run_live_simulation(scenario_raw: str, *, with_critic: bool = False) -> dict[str, Any]:

@@ -7,11 +7,16 @@ outputs. The baseline assembly runs the whole pipeline with zero LLM calls.
 """
 
 from agents.orchestrator.agent import build_orchestrator, build_simulate_loop
-from agents.orchestrator.driver import run_baseline_simulation, run_live_simulation
+from agents.orchestrator.driver import (
+    run_baseline_ensemble,
+    run_baseline_simulation,
+    run_live_simulation,
+)
 
 __all__ = [
     "build_orchestrator",
     "build_simulate_loop",
+    "run_baseline_ensemble",
     "run_baseline_simulation",
     "run_live_simulation",
 ]

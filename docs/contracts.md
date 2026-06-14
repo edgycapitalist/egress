@@ -316,11 +316,13 @@ with no live engine or LLM calls. Line order:
 
 This file is self-contained: meta + ticks + metrics fully describe the run.
 
-### 3.5 `EnsembleResult` (multi-case summary, Phase 3 target)
+### 3.5 `EnsembleResult` (multi-case summary)
 
 The ensemble envelope is not part of a single-run NDJSON stream. It is the gateway
 and frontend summary shape for low/base/high peer-crowding cases across multiple
-deterministic seeds.
+deterministic seeds. The gateway streams the selected representative replay as
+normal `meta`/`ticks`/`metrics` frames, then emits one `ensemble` frame containing
+this envelope before `done`.
 
 ```jsonc
 {
@@ -424,4 +426,4 @@ version so an old recording is always interpretable.
 | `0.1.0` | 2026-06-11 | Initial boundary: `RunConfig`, `Stance`, `MarketState`, `TickEvent`, `Metrics`, NDJSON record, and the `session.state` keys. |
 | `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |
 | `0.3.0` | 2026-06-13 | Added `crisis_intensity` (optional, defaults to `1.0`). Crisis magnitude is now decoupled from trailing volatility: volatility is a floored fragility amplifier, not a gate, so a severe enough crisis can close even a calm, deep name while a mild one leaves it open. The live path derives the intensity from the stress text + real news sentiment. Backward-compatible — an omitted `crisis_intensity` reproduces v0.2.0 behaviour. |
-| `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. These default safely for old configs and replays; engine behavior is unchanged until later remediation phases wire the fields in. |
+| `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. Phase 2 wired peer cohorts/time scale into engine behavior, and Phase 3 streams deterministic low/base/high ensemble summaries through the gateway while preserving cached replays. |

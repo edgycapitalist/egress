@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { Frame, Levers, Metrics, RunConfig, RunSource, TickEvent } from "./types";
+import type {
+  EnsembleResult,
+  Frame,
+  Levers,
+  Metrics,
+  RunConfig,
+  RunSource,
+  TickEvent,
+} from "./types";
 
 const WS_URL =
   process.env.NEXT_PUBLIC_GATEWAY_WS ?? "ws://127.0.0.1:8000/ws/run";
@@ -15,6 +23,7 @@ export interface RunState {
   ticks: TickEvent[];
   totalTicks: number;
   metrics: Metrics | null;
+  ensemble: EnsembleResult | null;
   analysis: string | null;
   message: string | null;
   error: string | null;
@@ -27,6 +36,7 @@ const EMPTY: RunState = {
   ticks: [],
   totalTicks: 0,
   metrics: null,
+  ensemble: null,
   analysis: null,
   message: null,
   error: null,
@@ -127,6 +137,7 @@ function reduce(s: RunState, frame: Frame): RunState {
         totalTicks: frame.total_ticks,
         ticks: [],
         metrics: null,
+        ensemble: null,
         analysis: null,
         error: null,
       };
@@ -134,6 +145,8 @@ function reduce(s: RunState, frame: Frame): RunState {
       return { ...s, ticks: [...s.ticks, ...frame.ticks] };
     case "metrics":
       return { ...s, metrics: frame.metrics };
+    case "ensemble":
+      return { ...s, ensemble: frame.ensemble };
     case "analysis":
       return { ...s, analysis: frame.analysis };
     case "status":
