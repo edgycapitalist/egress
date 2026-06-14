@@ -52,6 +52,16 @@ async def test_loop_terminates_before_the_window_cap() -> None:
     assert res["market_state"]["tick"] == res["run_metrics"]["ticks_run"]
 
 
+@pytest.mark.asyncio
+async def test_baseline_pipeline_records_latency_without_gemini_calls() -> None:
+    res = await run_baseline_simulation()
+    report = res["timing_report"]
+    assert report["summary"]["agent_calls"] >= 4
+    assert report["summary"]["engine_windows"] > 0
+    assert report["summary"]["gemini_calls"] == 0
+    assert any(event["kind"] == "engine_window" for event in report["events"])
+
+
 def test_coerce_stances_falls_back_on_bad_input() -> None:
     config = flagship_scenario()
     state = {

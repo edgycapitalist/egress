@@ -22,6 +22,7 @@ only ever carries the contract shapes.
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +43,7 @@ from agents.common.state import (
     TICK_WINDOW_INDEX,
     stance_key,
 )
+from agents.common.timing import after_agent, before_agent, record_timing, timing_block
 
 # Where NDJSON replays are written for live agent runs.
 REPLAY_DIR = Path("runs")
@@ -107,7 +109,11 @@ class SetupEngineAgent(BaseAgent):
     """Build and start the engine from ``scenario_config`` (deterministic)."""
 
     def __init__(self, name: str = "SetupEngine") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
@@ -121,13 +127,14 @@ class SetupEngineAgent(BaseAgent):
             return
 
         config = RunConfig.model_validate(raw_config)
-        REPLAY_DIR.mkdir(parents=True, exist_ok=True)
-        replay_path = str(REPLAY_DIR / f"{config.run_id}.ndjson")
-        recorder = Recorder(replay_path)
-        recorder.__enter__()
-        engine = Engine(config, recorder=recorder)
-        market_state = engine.start()
-        _RUNS[config.run_id] = RunHandle(engine, recorder, replay_path)
+        with timing_block(state, kind="engine_setup", name=self.name, run_id=config.run_id):
+            REPLAY_DIR.mkdir(parents=True, exist_ok=True)
+            replay_path = str(REPLAY_DIR / f"{config.run_id}.ndjson")
+            recorder = Recorder(replay_path)
+            recorder.__enter__()
+            engine = Engine(config, recorder=recorder)
+            market_state = engine.start()
+            _RUNS[config.run_id] = RunHandle(engine, recorder, replay_path)
 
         delta = {
             MARKET_STATE: market_state.model_dump(),
@@ -143,7 +150,11 @@ class AdvanceEngineAgent(BaseAgent):
     """Advance the engine one window of ``k`` ticks from the current stances."""
 
     def __init__(self, name: str = "AdvanceEngine") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
@@ -157,7 +168,18 @@ class AdvanceEngineAgent(BaseAgent):
             return
 
         stances = _coerce_stances(state, config)
+        started = time.perf_counter()
         market_state, _events = handle.engine.advance(stances, config.ticks_per_window)
+        record_timing(
+            state,
+            kind="engine_window",
+            name=self.name,
+            duration_ms=(time.perf_counter() - started) * 1000.0,
+            run_id=config.run_id,
+            window_index=int(state.get(TICK_WINDOW_INDEX, 0)),
+            ticks_requested=config.ticks_per_window,
+            ticks_emitted=len(_events),
+        )
 
         window = int(state.get(TICK_WINDOW_INDEX, 0)) + 1
         delta = {MARKET_STATE: market_state.model_dump(), TICK_WINDOW_INDEX: window}
@@ -174,7 +196,11 @@ class FinalizeEngineAgent(BaseAgent):
     """Finalize metrics and close the recorder (deterministic)."""
 
     def __init__(self, name: str = "FinalizeEngine") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state
@@ -184,8 +210,9 @@ class FinalizeEngineAgent(BaseAgent):
             yield Event(author=self.name, actions=EventActions(state_delta={}))
             return
 
-        metrics = handle.engine.finalize()
-        close_handle(config.run_id)
+        with timing_block(state, kind="engine_finalize", name=self.name, run_id=config.run_id):
+            metrics = handle.engine.finalize()
+            close_handle(config.run_id)
         delta = {RUN_METRICS: metrics.model_dump(), REPLAY_REF: handle.replay_path}
         for key, value in delta.items():
             state[key] = value

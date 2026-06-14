@@ -22,6 +22,7 @@ from agents.common.state import (
     RUN_METRICS,
     SCENARIO_CONFIG,
 )
+from agents.common.timing import after_agent, before_agent
 from agents.critic.compare import render_verdict
 from agents.critic.core import report_for_run
 
@@ -30,7 +31,11 @@ class BaselineCriticAgent(BaseAgent):
     """Writes ``calibration_report`` + ``calibration_adjustments`` deterministically (no LLM)."""
 
     def __init__(self, name: str = "BaselineCritic") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state

@@ -35,6 +35,7 @@ from agents.common.state import (
     RUN_METRICS,
     SCENARIO_CONFIG,
     SCENARIO_RAW,
+    TIMING_REPORT,
 )
 from agents.orchestrator.agent import build_orchestrator
 from agents.orchestrator.engine_bridge import close_handle
@@ -51,6 +52,7 @@ def _collect(state: dict) -> dict[str, Any]:
         "analysis": state.get(ANALYSIS),
         "calibration_report": state.get(CALIBRATION_REPORT),
         "replay_ref": state.get(REPLAY_REF),
+        "timing_report": state.get(TIMING_REPORT),
         "error": state.get("engine_error") or state.get("scenario_error"),
     }
 

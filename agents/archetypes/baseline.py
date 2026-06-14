@@ -30,6 +30,7 @@ from agents.common.state import (
     SCENARIO_CONFIG,
     stance_key,
 )
+from agents.common.timing import after_agent, before_agent
 from agents.critic.adjust import apply_adjustments
 from agents.critic.schema import CalibrationAdjustments
 
@@ -46,7 +47,11 @@ class BaselineStancesAgent(BaseAgent):
     """Writes the six ``*_stance`` keys from the deterministic heuristic (no LLM)."""
 
     def __init__(self, name: str = "BaselineStances") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state

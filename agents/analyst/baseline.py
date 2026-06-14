@@ -16,6 +16,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
 from agents.common.state import ANALYSIS, RUN_METRICS, SCENARIO_CONFIG
+from agents.common.timing import after_agent, before_agent
 
 
 def render_summary(scenario: dict, metrics: dict) -> str:
@@ -73,7 +74,11 @@ class BaselineAnalystAgent(BaseAgent):
     """Writes the ``analysis`` key from a deterministic template (no LLM)."""
 
     def __init__(self, name: str = "BaselineAnalyst") -> None:
-        super().__init__(name=name)
+        super().__init__(
+            name=name,
+            before_agent_callback=before_agent(name),
+            after_agent_callback=after_agent(name),
+        )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event]:
         state = ctx.session.state

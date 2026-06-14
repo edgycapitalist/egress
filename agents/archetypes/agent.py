@@ -39,6 +39,16 @@ from agents.common.state import (
     TICK_WINDOW_INDEX,
     stance_key,
 )
+from agents.common.timing import (
+    after_agent,
+    after_model,
+    after_tool,
+    before_agent,
+    before_model,
+    before_tool,
+    on_model_error,
+    on_tool_error,
+)
 
 
 class StanceOut(BaseModel):
@@ -156,7 +166,17 @@ def build_archetype_agent(investor_type: InvestorType) -> LlmAgent:
         tools=[*NEWS_TOOLS, *MARKET_DATA_TOOLS],
         output_schema=StanceOut,
         output_key=stance_key(investor_type),
-        after_agent_callback=_clamp_stance_callback(investor_type),
+        before_agent_callback=before_agent(AGENT_NAMES[investor_type]),
+        after_agent_callback=[
+            _clamp_stance_callback(investor_type),
+            after_agent(AGENT_NAMES[investor_type]),
+        ],
+        before_model_callback=before_model,
+        after_model_callback=after_model,
+        on_model_error_callback=on_model_error,
+        before_tool_callback=before_tool,
+        after_tool_callback=after_tool,
+        on_tool_error_callback=on_tool_error,
         # Each mood-setter is a leaf; it must not hand control to a peer.
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,

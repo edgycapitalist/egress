@@ -30,6 +30,13 @@ from agents.common.state import (
     RUN_METRICS,
     SCENARIO_CONFIG,
 )
+from agents.common.timing import (
+    after_agent,
+    after_model,
+    before_agent,
+    before_model,
+    on_model_error,
+)
 from agents.critic.core import report_for_run
 
 # The model writes its narrative judgement here; the callback finalises the
@@ -115,7 +122,11 @@ def build_critic() -> LlmAgent:
         instruction=_instruction_provider,
         description="Judges whether the simulated crowd behaved plausibly vs a real episode.",
         output_key=CALIBRATION_NARRATIVE,
-        after_agent_callback=_finalize_report,
+        before_agent_callback=before_agent("CalibrationCritic"),
+        after_agent_callback=[_finalize_report, after_agent("CalibrationCritic")],
+        before_model_callback=before_model,
+        after_model_callback=after_model,
+        on_model_error_callback=on_model_error,
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,
     )

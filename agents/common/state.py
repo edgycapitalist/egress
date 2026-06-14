@@ -35,6 +35,10 @@ ANALYSIS = "analysis"  # analyst output_key
 CALIBRATION_REPORT = "calibration_report"  # critic output_key (later phase)
 CALIBRATION_ADJUSTMENTS = "calibration_adjustments"  # memory <-> archetypes (later phase)
 
+# Non-user-facing latency telemetry for live/debug runs.
+TIMING_REPORT = "timing_report"
+TIMING_PENDING = "_timing_pending"
+
 
 def stance_key(investor_type: InvestorType) -> str:
     """The session.state key an archetype of ``investor_type`` writes its stance to."""

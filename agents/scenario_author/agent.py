@@ -24,6 +24,16 @@ from agents.common.state import (
     SCENARIO_CONFIG,
     SCENARIO_RAW,
 )
+from agents.common.timing import (
+    after_agent,
+    after_model,
+    after_tool,
+    before_agent,
+    before_model,
+    before_tool,
+    on_model_error,
+    on_tool_error,
+)
 from agents.scenario_author.validation import ScenarioDraft, build_run_config
 
 # The LLM writes its draft here; the callback finalises it into SCENARIO_CONFIG.
@@ -116,7 +126,17 @@ def build_scenario_author(*, seed_value: int | None = None) -> LlmAgent:
         tools=[*MARKET_DATA_TOOLS],
         output_schema=ScenarioDraft,
         output_key=SCENARIO_DRAFT,
-        after_agent_callback=_finalize_scenario(seed_value if seed_value is not None else seed()),
+        before_agent_callback=before_agent("ScenarioAuthor"),
+        after_agent_callback=[
+            _finalize_scenario(seed_value if seed_value is not None else seed()),
+            after_agent("ScenarioAuthor"),
+        ],
+        before_model_callback=before_model,
+        after_model_callback=after_model,
+        on_model_error_callback=on_model_error,
+        before_tool_callback=before_tool,
+        after_tool_callback=after_tool,
+        on_tool_error_callback=on_tool_error,
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,
     )

@@ -20,6 +20,13 @@ from google.adk.agents.readonly_context import ReadonlyContext
 
 from agents.common.env import strong_model
 from agents.common.state import ANALYSIS, MARKET_STATE, REPLAY_REF, RUN_METRICS, SCENARIO_CONFIG
+from agents.common.timing import (
+    after_agent,
+    after_model,
+    before_agent,
+    before_model,
+    on_model_error,
+)
 
 INSTRUCTION = """\
 You are the Analyst for Egress, a crisis-exit market simulator. A simulation has
@@ -73,6 +80,11 @@ def build_analyst() -> LlmAgent:
         instruction=_instruction_provider,
         description="Explains, in plain language, how the simulated exit unfolded.",
         output_key=ANALYSIS,
+        before_agent_callback=before_agent("Analyst"),
+        after_agent_callback=after_agent("Analyst"),
+        before_model_callback=before_model,
+        after_model_callback=after_model,
+        on_model_error_callback=on_model_error,
         disallow_transfer_to_parent=True,
         disallow_transfer_to_peers=True,
     )
