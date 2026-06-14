@@ -92,6 +92,45 @@ def _assumption_profile_from_levers(profile: dict, controls: dict | None) -> dic
     return merged
 
 
+def _neutral_peer_profile(symbol: str) -> dict:
+    return {
+        "case": "base",
+        "peer_fund_count": 0,
+        "overlap_pct": 0.0,
+        "avg_peer_position_pct_adv": 0.0,
+        "shared_trigger_drawdown_pct": 0.0,
+        "correlated_exit_probability": 0.0,
+        "leverage_sensitivity": 0.0,
+        "redemption_pressure": 0.0,
+        "etf_flow_pressure": 0.0,
+        "evidence_source": "synthetic_assumption",
+        "confidence": "low",
+        "notes": (
+            f"No peer-crowding source was selected for {symbol}; this single-case "
+            "run keeps peer cohorts neutral. Use assumption-led, public evidence, "
+            "or upload mode to stress similar-holder exits."
+        ),
+    }
+
+
+def _neutral_peer_evidence(symbol: str, profile: dict) -> dict:
+    return {
+        "summary": (
+            f"Peer-crowding assumptions for {symbol} are neutral because no peer "
+            "source was selected."
+        ),
+        "items": [
+            {
+                "field": "peer_crowding",
+                "source": profile["evidence_source"],
+                "confidence": profile["confidence"],
+                "label": f"{symbol} peer crowding",
+                "notes": profile["notes"],
+            }
+        ],
+    }
+
+
 def _normalise_mix(mix: dict[str, float] | None) -> dict[str, float]:
     """Coerce a partial/odd crowding mix into six non-negative fractions summing to 1."""
     if not mix:
@@ -204,33 +243,44 @@ def build_run_config(
     ).strip()
     user_holdings_csv = str(levers.get("user_holdings_csv") or "").strip()
     normalized_peer_mode = peer_source_mode.replace("-", "_")
+    explicit_peer_source = bool(
+        normalized_peer_mode or user_holdings_csv or levers.get("peer_crowding")
+    )
     if not normalized_peer_mode:
         if user_holdings_csv:
             normalized_peer_mode = "user_upload"
         elif levers.get("peer_crowding"):
             normalized_peer_mode = "assumption_led"
         else:
-            normalized_peer_mode = "auto"
+            normalized_peer_mode = "neutral"
 
-    positioning = get_peer_crowding_evidence(
-        data["instrument"]["symbol"],
-        source_mode=normalized_peer_mode,
-        user_holdings_csv=user_holdings_csv,
-    )
-    peer_profile = dict(positioning["peer_crowding"])
-    if normalized_peer_mode == "assumption_led":
-        peer_profile = _assumption_profile_from_levers(
-            peer_profile, levers.get("peer_crowding")
+    if explicit_peer_source:
+        positioning = get_peer_crowding_evidence(
+            data["instrument"]["symbol"],
+            source_mode=normalized_peer_mode,
+            user_holdings_csv=user_holdings_csv,
         )
-    data["peer_crowding"] = peer_profile
-    data["scenario_mode"] = _scenario_mode_for_peer_source(
-        positioning.get("selected_source"), normalized_peer_mode
-    )
-    if normalized_peer_mode == "auto" and not live_data:
-        data["scenario_mode"] = "assumption_led"
-    data["evidence_summary"] = _merge_evidence_summary(
-        data.get("evidence_summary"), positioning.get("evidence_summary")
-    )
+        peer_profile = dict(positioning["peer_crowding"])
+        if normalized_peer_mode == "assumption_led":
+            peer_profile = _assumption_profile_from_levers(
+                peer_profile, levers.get("peer_crowding")
+            )
+        data["peer_crowding"] = peer_profile
+        data["scenario_mode"] = _scenario_mode_for_peer_source(
+            positioning.get("selected_source"), normalized_peer_mode
+        )
+        if normalized_peer_mode == "auto" and not live_data:
+            data["scenario_mode"] = "assumption_led"
+        data["evidence_summary"] = _merge_evidence_summary(
+            data.get("evidence_summary"), positioning.get("evidence_summary")
+        )
+    else:
+        peer_profile = _neutral_peer_profile(data["instrument"]["symbol"])
+        data["peer_crowding"] = peer_profile
+        data["evidence_summary"] = _merge_evidence_summary(
+            data.get("evidence_summary"),
+            _neutral_peer_evidence(data["instrument"]["symbol"], peer_profile),
+        )
 
     time_scale = dict(data.get("time_scale") or {})
     if levers.get("time_scale"):

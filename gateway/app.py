@@ -100,10 +100,11 @@ def _cached_overlay_config_and_ensemble(
     replay_config = RunConfig.model_validate(raw_config)
     peer_levers: dict[str, Any] = {
         "symbol": replay_config.instrument.symbol,
-        "peer_source_mode": levers.get("peer_source_mode") or "auto",
         "user_holdings_csv": levers.get("user_holdings_csv") or "",
         "time_scale": levers.get("time_scale") or replay_config.time_scale.model_dump(),
     }
+    if levers.get("peer_source_mode") is not None:
+        peer_levers["peer_source_mode"] = levers["peer_source_mode"]
     if levers.get("peer_crowding") is not None:
         peer_levers["peer_crowding"] = levers["peer_crowding"]
     if levers.get("exit_horizon_ticks") is not None:
