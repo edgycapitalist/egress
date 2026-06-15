@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root, for a
 
 from agents.analyst.baseline import render_summary
 from engine.core import Engine
-from engine.presets import PRESETS
+from engine.presets import DEFAULT_POSITION_FRAC, PRESETS
 from engine.replay.recorder import Recorder
 from engine.scenarios import flagship_scenario
 from gateway.run_config import build_run_config
@@ -53,8 +53,13 @@ def main() -> int:
 
     # One per curated ticker, at a fixed 20% of ADV (the live picker's config).
     for symbol in PRESETS:
-        cfg = build_run_config({"symbol": symbol})
-        cfg = cfg.model_copy(update={"run_id": f"{symbol.lower()}-cached"})
+        preset = PRESETS[symbol]
+        cfg = build_run_config(
+            {"symbol": symbol, "position_size": round(DEFAULT_POSITION_FRAC * preset.adv)}
+        )
+        cfg = cfg.model_copy(
+            update={"run_id": f"{symbol.lower()}-cached", "scenario_mode": "historical_saved"}
+        )
         print(_record(cfg, symbol.lower()))
     return 0
 

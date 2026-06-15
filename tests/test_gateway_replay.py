@@ -12,12 +12,20 @@ from pathlib import Path
 
 import gateway.app as gateway_app
 import pytest
+from engine.schema import SCHEMA_VERSION, RunConfig
 from fastapi.testclient import TestClient
 from gateway.app import app
 from gateway.replay import frames_from_replay, read_records
 from gateway.run_config import build_run_config
 
 FLAGSHIP = Path("docs/replays/flagship-42.ndjson")
+COMMITTED_REPLAYS = [
+    FLAGSHIP,
+    Path("docs/replays/cvna.ndjson"),
+    Path("docs/replays/aapl.ndjson"),
+    Path("docs/replays/sivb.ndjson"),
+    Path("docs/replays/spy.ndjson"),
+]
 
 
 def test_read_records_shapes_match_contract() -> None:
@@ -53,6 +61,43 @@ def test_frames_can_include_ensemble_without_changing_replay_order() -> None:
     assert kinds.index("ensemble") > kinds.index("metrics")
     assert kinds[-1] == "done"
     assert next(f for f in frames if f["type"] == "ensemble")["ensemble"] == ensemble
+
+
+@pytest.mark.parametrize("path", COMMITTED_REPLAYS)
+def test_committed_cached_replays_are_current_persistent_book(path: Path) -> None:
+    meta, ticks, metrics = read_records(path)
+    assert meta["schema_version"] == SCHEMA_VERSION
+    assert meta["config"]["book_persistence"]["enabled"] is True
+    RunConfig.model_validate(meta["config"])
+    assert ticks
+    assert metrics is not None
+
+
+@pytest.mark.parametrize("path", COMMITTED_REPLAYS)
+def test_cached_overlay_preserves_replay_book_persistence(path: Path) -> None:
+    meta, _ticks, _metrics = read_records(path)
+    overlay, ensemble = gateway_app._cached_overlay_config_and_ensemble(path, {})
+    assert overlay is not None
+    assert ensemble is not None
+    assert overlay["book_persistence"] == meta["config"]["book_persistence"]
+
+
+def test_cached_overlay_does_not_modernize_legacy_replay(tmp_path: Path) -> None:
+    meta, ticks, metrics = read_records(FLAGSHIP)
+    legacy_meta = json.loads(json.dumps(meta))
+    legacy_meta["schema_version"] = "0.2.0"
+    legacy_meta["config"].pop("book_persistence", None)
+
+    legacy_path = tmp_path / "legacy.ndjson"
+    records = [legacy_meta, *ticks[:1], metrics]
+    legacy_path.write_text(
+        "\n".join(json.dumps(record) for record in records if record is not None) + "\n",
+        encoding="utf-8",
+    )
+
+    overlay, _ensemble = gateway_app._cached_overlay_config_and_ensemble(legacy_path, {})
+    assert overlay is not None
+    assert overlay["book_persistence"]["enabled"] is False
 
 
 def test_cached_websocket_run_offline() -> None:
