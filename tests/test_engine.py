@@ -1,5 +1,6 @@
 """End-to-end engine integration tests."""
 
+from engine.attribution import estimate_counterfactual_attribution
 from engine.baseline import baseline_stances
 from engine.core import Engine
 from engine.replay.recorder import Recorder, load_replay
@@ -208,3 +209,31 @@ def test_tick_and_metrics_impact_attribution_are_populated() -> None:
     )
     assert metrics.impact_attribution.exogenous_shock_bps == impact.exogenous_shock_bps
     assert metrics.impact_attribution.total_bps == impact.total_bps
+
+
+def test_counterfactual_attribution_runs_representative_ablations() -> None:
+    data = flagship_scenario().model_dump()
+    data["run_id"] = "counterfactual-attribution"
+    data["population_size"] = 500
+    data["max_ticks"] = 80
+    data["ticks_per_window"] = 10
+    data["position"]["quantity"] = 50_000
+    cfg = RunConfig(**data)
+
+    full = Engine(cfg).run_baseline()
+    attribution = estimate_counterfactual_attribution(cfg, full)
+
+    assert attribution.method == "paired_counterfactual_representative"
+    assert attribution.full_run_final_price == full.final_price
+    assert attribution.no_peer_final_price is not None
+    assert attribution.no_exogenous_final_price is not None
+    assert attribution.no_exit_final_price is not None
+    assert abs(
+        attribution.full_run_bps
+        - (
+            attribution.exogenous_shock_bps
+            + attribution.peer_cascade_bps
+            + attribution.own_exit_bps
+            + attribution.residual_market_behavior_bps
+        )
+    ) < 0.01

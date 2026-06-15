@@ -71,6 +71,8 @@ def test_committed_replay_loads_with_phase4_persistent_book() -> None:
     assert ticks[0].impact_attribution.total_bps >= 0.0
     assert metrics is not None
     assert metrics.impact_attribution.total_bps >= 0.0
+    assert metrics.counterfactual_attribution is not None
+    assert metrics.counterfactual_attribution.method == "paired_counterfactual_representative"
 
 
 def test_line_count_and_order(tmp_path) -> None:

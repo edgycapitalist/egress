@@ -56,9 +56,16 @@ VOL_GAIN_BOUNDS = (0.05, 2.5)
 FRAG_FLOOR = 0.45
 
 class Engine:
-    def __init__(self, config: RunConfig, recorder: Recorder | None = None) -> None:
+    def __init__(
+        self,
+        config: RunConfig,
+        recorder: Recorder | None = None,
+        *,
+        enable_exit_trader: bool = True,
+    ) -> None:
         self.config = config
         self.recorder = recorder
+        self.enable_exit_trader = enable_exit_trader
         self.rng = np.random.default_rng(config.seed)
 
         ref = config.instrument.reference_price
@@ -262,8 +269,11 @@ class Engine:
             price = self._non_marketable_liquidity_price(intent)
             self.book.add_limit(intent.side, price, intent.size, intent.investor_type)
 
-        # The exiting trader competes with the crowd in randomised order.
-        trader_size = self.trader.child_size(self.recent_volume)
+        # The exiting trader competes with the crowd in randomised order. It can
+        # be disabled only for representative paired counterfactual attribution.
+        trader_size = (
+            self.trader.child_size(self.recent_volume) if self.enable_exit_trader else 0
+        )
         trader_intent = (
             OrderIntent("sell", trader_size, None, "exit_trader") if trader_size > 0 else None
         )
@@ -290,6 +300,8 @@ class Engine:
         withdrawal_bps = 0.0
         endogenous_bps = raw_trading_bps
         if raw_trading_bps > 0 and sell_intent > 0:
+            # Same-run impact estimates, not causal proof: the book path is
+            # interactive, so true attribution needs paired counterfactual runs.
             if bid_depth_before <= 0:
                 withdrawal_share = 1.0
             else:

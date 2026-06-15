@@ -71,6 +71,9 @@ def test_committed_cached_replays_are_current_persistent_book(path: Path) -> Non
     RunConfig.model_validate(meta["config"])
     assert ticks
     assert metrics is not None
+    assert metrics.get("counterfactual_attribution", {}).get("method") == (
+        "paired_counterfactual_representative"
+    )
 
 
 @pytest.mark.parametrize("path", COMMITTED_REPLAYS)

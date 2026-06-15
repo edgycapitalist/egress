@@ -67,10 +67,17 @@ def test_run_ensemble_returns_case_summaries_bands_and_replays(tmp_path: Path) -
         assert summary.metrics.ensemble_case == summary.case
         assert summary.metrics.ensemble_seed in summary.seeds
 
+    base = next(summary for summary in result.cases if summary.case == "base")
+    assert base.metrics.counterfactual_attribution is not None
+    for summary in result.cases:
+        if summary.case != "base":
+            assert summary.metrics.counterfactual_attribution is None
+
     _meta, _ticks, metrics = load_replay(result.representative_replay_ref)
     assert metrics is not None
     assert metrics.ensemble_case == "base"
     assert metrics.ensemble_seed in [11, 12]
+    assert metrics.counterfactual_attribution is not None
 
 
 @pytest.mark.asyncio
@@ -94,4 +101,4 @@ def test_ensemble_analysis_explains_ranges_and_assumptions(tmp_path: Path) -> No
     assert "low/base/high" in text
     assert "stuck range" in text
     assert "assumption-based stress" in text
-    assert "scheduled crisis shocks" in text
+    assert "impact estimates" in text

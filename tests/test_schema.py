@@ -5,6 +5,7 @@ from engine.schema import (
     INVESTOR_TYPES,
     STANCE_KEYS,
     BookPersistence,
+    CounterfactualAttribution,
     CrowdingMix,
     EnsembleCaseSummary,
     EnsembleResult,
@@ -145,9 +146,25 @@ def test_old_tick_and_metrics_records_default_new_fields() -> None:
         ticks_run=1,
     )
     assert tick.peer_actions.triggered_funds == 0
+    assert tick.impact_attribution.method == "heuristic_impact_estimate"
     assert tick.impact_attribution.total_bps == 0.0
     assert metrics.impact_attribution == ImpactAttribution()
+    assert metrics.counterfactual_attribution is None
     assert metrics.ensemble_case is None
+
+
+def test_counterfactual_attribution_contract() -> None:
+    attribution = CounterfactualAttribution(
+        full_run_bps=500.0,
+        exogenous_shock_bps=120.0,
+        peer_cascade_bps=80.0,
+        own_exit_bps=60.0,
+        residual_market_behavior_bps=240.0,
+    )
+
+    assert attribution.method == "paired_counterfactual_representative"
+    assert attribution.price_move_basis == "final_price_decline_bps"
+    assert attribution.exogenous_shock_bps == 120.0
 
 
 def test_ensemble_result_serializes_summary_contract() -> None:

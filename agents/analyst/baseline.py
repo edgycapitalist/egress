@@ -83,14 +83,29 @@ def render_ensemble_summary(scenario: dict, ensemble: dict) -> str:
     )
 
     impact = dict(base.get("impact_attribution") or {})
-    attribution = (
-        "The representative base path separates price movement into scheduled crisis shocks "
-        f"({_bps(impact.get('exogenous_shock_bps'))}), trading impact "
-        f"({_bps(impact.get('endogenous_trading_bps'))}), and liquidity withdrawal "
-        f"({_bps(impact.get('liquidity_withdrawal_bps'))})."
-        if impact
-        else "The representative path should be read as one replay inside the ensemble range."
-    )
+    counterfactual = dict(base.get("counterfactual_attribution") or {})
+    if counterfactual:
+        attribution = (
+            "The representative base path includes paired counterfactual impact estimates: "
+            f"exogenous shocks {_bps(counterfactual.get('exogenous_shock_bps'))}, "
+            f"peer cascade {_bps(counterfactual.get('peer_cascade_bps'))}, own exit "
+            f"{_bps(counterfactual.get('own_exit_bps'))}, and residual market behaviour "
+            f"{_bps(counterfactual.get('residual_market_behavior_bps'))}. These are "
+            "approximate deltas, not exact causal proof."
+        )
+    elif impact:
+        attribution = (
+            "The representative base path reports heuristic impact estimates for "
+            "scheduled crisis shocks "
+            f"({_bps(impact.get('exogenous_shock_bps'))}), trading impact "
+            f"({_bps(impact.get('endogenous_trading_bps'))}), and liquidity withdrawal "
+            f"({_bps(impact.get('liquidity_withdrawal_bps'))})."
+        )
+    else:
+        attribution = (
+            "The representative path should be read as one replay inside the "
+            "ensemble range."
+        )
 
     source = (
         f"Assumption evidence: {evidence_summary}"
@@ -122,6 +137,8 @@ def render_summary(scenario: dict, metrics: dict) -> str:
     final = metrics.get("final_price", 0.0)
     halts = metrics.get("halt_count", 0)
     tte = metrics.get("time_to_exit_ticks")
+    impact = dict(metrics.get("impact_attribution") or {})
+    counterfactual = dict(metrics.get("counterfactual_attribution") or {})
 
     closed = fill < 0.999
     verdict = (
@@ -150,13 +167,34 @@ def render_summary(scenario: dict, metrics: dict) -> str:
     exit_line = (
         f"Full exit took {tte} ticks." if tte is not None else "The position never fully exited."
     )
+    if counterfactual:
+        impact_line = (
+            "Paired counterfactual impact estimates put the final-price decline at "
+            f"{_bps(counterfactual.get('full_run_bps'))}, with approximate deltas of "
+            f"{_bps(counterfactual.get('exogenous_shock_bps'))} from scheduled shocks, "
+            f"{_bps(counterfactual.get('peer_cascade_bps'))} from peer cascade, "
+            f"{_bps(counterfactual.get('own_exit_bps'))} from the exit order itself, "
+            f"and {_bps(counterfactual.get('residual_market_behavior_bps'))} residual market "
+            "behaviour. Treat those as estimates, not exact causes."
+        )
+    elif impact:
+        impact_line = (
+            "The run also reports heuristic impact estimates: scheduled shocks "
+            f"{_bps(impact.get('exogenous_shock_bps'))}, endogenous trading "
+            f"{_bps(impact.get('endogenous_trading_bps'))}, and liquidity withdrawal "
+            f"{_bps(impact.get('liquidity_withdrawal_bps'))}."
+        )
+    else:
+        impact_line = ""
     mechanism = (
-        "The cascade came from forced and panic sellers overwhelming thin "
+        "The simulated mechanism is consistent with forced and panic sellers overwhelming thin "
         "bargain-hunter and market-maker support as the shocks landed: each break in "
         "the price armed the next tranche of sellers, draining the book faster than "
         "buyers replenished it."
     )
-    return "  ".join([verdict, price_line, halt_line, exit_line, mechanism])
+    return "  ".join(
+        part for part in [verdict, price_line, halt_line, exit_line, impact_line, mechanism] if part
+    )
 
 
 class BaselineAnalystAgent(BaseAgent):

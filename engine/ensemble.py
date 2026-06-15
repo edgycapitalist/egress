@@ -14,9 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from engine.attribution import estimate_counterfactual_attribution
 from engine.baseline import baseline_stances
 from engine.core import Engine
-from engine.replay.recorder import Recorder
+from engine.replay.recorder import Recorder, replace_metrics
 from engine.schema import (
     EnsembleCaseSummary,
     EnsembleResult,
@@ -241,6 +242,7 @@ def run_ensemble(
     replay_dir: str | Path = "runs",
     seeds: Iterable[int] | None = None,
     on_window_timing: WindowTimingHook | None = None,
+    with_counterfactual_attribution: bool = True,
 ) -> EnsembleResult:
     """Run low/base/high peer-crowding cases over deterministic seeds."""
     replay_root = Path(replay_dir)
@@ -267,6 +269,20 @@ def run_ensemble(
             case_runs.append(run)
             all_runs.append(run)
         representative = _median_run(case_runs)
+        if with_counterfactual_attribution and representative.case == "base":
+            counterfactual = estimate_counterfactual_attribution(
+                representative.config, representative.metrics
+            )
+            representative = EnsembleRun(
+                case=representative.case,
+                seed=representative.seed,
+                config=representative.config,
+                metrics=representative.metrics.model_copy(
+                    update={"counterfactual_attribution": counterfactual}
+                ),
+                replay_ref=representative.replay_ref,
+            )
+            replace_metrics(representative.replay_ref, representative.metrics)
         summaries.append(
             EnsembleCaseSummary(
                 case=case,

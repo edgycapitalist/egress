@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "0.5.0"
+SCHEMA_VERSION = "0.6.0"
 
 #: Reference daily realized volatility. A name at this level has ``vol_gain == 1``
 #: (the crisis-fragile regime the engine was originally tuned to); a calmer name
@@ -358,15 +358,18 @@ class PeerActionCounts(BaseModel):
 
 
 class ImpactAttribution(BaseModel):
-    """Price-move attribution fields for exogenous and endogenous effects.
+    """Heuristic price-move impact estimates for exogenous and endogenous effects.
 
-    Values are basis points. Phase 1 defaults them to zero; later engine phases
-    populate them so UI/analyst copy can avoid attributing every move to trading.
+    Values are basis points. These fields are not causal proof; they are
+    same-run estimates that help UI/analyst copy avoid attributing every price
+    move to trading. Use ``CounterfactualAttribution`` when paired ablations were
+    actually run.
     """
 
     exogenous_shock_bps: float = 0.0
     endogenous_trading_bps: float = 0.0
     liquidity_withdrawal_bps: float = 0.0
+    method: Literal["heuristic_impact_estimate"] = "heuristic_impact_estimate"
 
     @property
     def total_bps(self) -> float:
@@ -375,6 +378,34 @@ class ImpactAttribution(BaseModel):
             + self.endogenous_trading_bps
             + self.liquidity_withdrawal_bps
         )
+
+
+class CounterfactualAttribution(BaseModel):
+    """Approximate paired counterfactual attribution for a representative run.
+
+    Each delta is measured against the full representative run's final-price
+    decline, in basis points of the instrument reference price. Because market
+    paths interact, these deltas are approximate scenario diagnostics, not exact
+    additive causes.
+    """
+
+    method: Literal["paired_counterfactual_representative"] = (
+        "paired_counterfactual_representative"
+    )
+    price_move_basis: Literal["final_price_decline_bps"] = "final_price_decline_bps"
+    full_run_bps: float = 0.0
+    exogenous_shock_bps: float = 0.0
+    peer_cascade_bps: float = 0.0
+    own_exit_bps: float = 0.0
+    residual_market_behavior_bps: float = 0.0
+    full_run_final_price: float | None = None
+    no_peer_final_price: float | None = None
+    no_exogenous_final_price: float | None = None
+    no_exit_final_price: float | None = None
+    notes: str = (
+        "Approximate paired counterfactual deltas for the representative run; "
+        "not exact causal attribution."
+    )
 
 
 class TickEvent(BaseModel):
@@ -415,6 +446,7 @@ class Metrics(BaseModel):
     halt_count: int
     ticks_run: int
     impact_attribution: ImpactAttribution = Field(default_factory=ImpactAttribution)
+    counterfactual_attribution: CounterfactualAttribution | None = None
     ensemble_case: PeerCrowdingCase | None = None
     ensemble_seed: int | None = None
 

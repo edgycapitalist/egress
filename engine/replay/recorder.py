@@ -75,3 +75,24 @@ def load_replay(path: str | Path) -> tuple[MetaRecord, list[TickEvent], Metrics 
     if meta is None:
         raise ValueError(f"{path} has no meta record")
     return meta, ticks, metrics
+
+
+def replace_metrics(path: str | Path, metrics: Metrics) -> None:
+    """Replace or append the final metrics record in an existing replay."""
+    replay_path = Path(path)
+    lines: list[str] = []
+    replaced = False
+    with replay_path.open(encoding="utf-8") as fh:
+        for line in fh:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            raw = json.loads(stripped)
+            if raw.get("type") == "metrics":
+                lines.append(metrics.model_dump_json())
+                replaced = True
+            else:
+                lines.append(stripped)
+    if not replaced:
+        lines.append(metrics.model_dump_json())
+    replay_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

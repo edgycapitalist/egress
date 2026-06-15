@@ -281,10 +281,11 @@ stances, and by the analyst at the end.
     "shares_sold": 0,
     "shares_remaining": 0
   },
-  "impact_attribution": {          // bps; populated by the engine for new runs
+  "impact_attribution": {          // heuristic impact estimates in bps
     "exogenous_shock_bps": 0.0,
     "endogenous_trading_bps": 0.0,
-    "liquidity_withdrawal_bps": 0.0
+    "liquidity_withdrawal_bps": 0.0,
+    "method": "heuristic_impact_estimate"
   },
   "halted": false,
   "halt_started": false,           // true on the tick a halt begins
@@ -315,15 +316,43 @@ writes the outcome to memory).
   "halt_triggered": true,
   "halt_count": 2,
   "ticks_run": 600,
-  "impact_attribution": {               // aggregate of tick-level attribution
+  "impact_attribution": {               // aggregate heuristic impact estimates
     "exogenous_shock_bps": 0.0,
     "endogenous_trading_bps": 0.0,
-    "liquidity_withdrawal_bps": 0.0
+    "liquidity_withdrawal_bps": 0.0,
+    "method": "heuristic_impact_estimate"
   },
+  "counterfactual_attribution": null,    // optional representative paired ablation
   "ensemble_case": null,
   "ensemble_seed": null
 }
 ```
+
+`impact_attribution` is a same-run **impact estimate**, not causal proof. It keeps
+the analyst from attributing every price move to agent trading, but it does not
+prove what caused the move. When `counterfactual_attribution` is present, the
+runner actually executed paired representative ablations and reports approximate
+final-price deltas:
+
+```jsonc
+{
+  "method": "paired_counterfactual_representative",
+  "price_move_basis": "final_price_decline_bps",
+  "full_run_bps": 500.0,
+  "exogenous_shock_bps": 120.0,
+  "peer_cascade_bps": 80.0,
+  "own_exit_bps": 60.0,
+  "residual_market_behavior_bps": 240.0,
+  "full_run_final_price": 95.0,
+  "no_peer_final_price": 95.8,
+  "no_exogenous_final_price": 96.2,
+  "no_exit_final_price": 95.6,
+  "notes": "Approximate paired counterfactual deltas for the representative run; not exact causal attribution."
+}
+```
+
+Only representative paths compute this slower diagnostic. The low/base/high
+ensemble seed sweep does not run counterfactual attribution for every seed.
 
 ### 3.4 NDJSON record / replay
 
@@ -437,8 +466,8 @@ an `LlmAgent` writes to. (Long-term memory across runs is separate — see
 
 ## Versioning
 
-`schema_version` is stamped into the NDJSON `meta` line. Bump it on any
-breaking change to a shape above, and note the change here. Replays carry their
+`schema_version` is stamped into the NDJSON `meta` line. Bump it on any contract
+shape or semantics change above, and note the change here. Replays carry their
 version so an old recording is always interpretable.
 
 | Version | Date | Change |
@@ -447,3 +476,5 @@ version so an old recording is always interpretable.
 | `0.2.0` | 2026-06-13 | Added `instrument.volatility` (optional, defaults to the `0.09` reference). The engine now consumes real liquidity: book depth/order sizes scale with `adv`/`free_float` and cascade propensity scales with `volatility`, so a run discriminates liquid from illiquid names without per-episode tuning. Backward-compatible — an omitted `volatility` reproduces v0.1.0 behaviour. |
 | `0.3.0` | 2026-06-13 | Added `crisis_intensity` (optional, defaults to `1.0`). Crisis magnitude is now decoupled from trailing volatility: volatility is a floored fragility amplifier, not a gate, so a severe enough crisis can close even a calm, deep name while a mild one leaves it open. The live path derives the intensity from the stress text + real news sentiment. Backward-compatible — an omitted `crisis_intensity` reproduces v0.2.0 behaviour. |
 | `0.4.0` | 2026-06-14 | Added backward-compatible product-accuracy contract fields: `peer_crowding`, `time_scale`, `scenario_mode`, `evidence_summary`, tick/metrics `impact_attribution`, tick `peer_actions`, and the `EnsembleResult` envelope. Phase 2 wired peer cohorts/time scale into engine behavior, Phase 3 streams deterministic low/base/high ensemble summaries through the gateway while preserving cached replays, and Phase 4 fills peer-crowding/evidence fields through the free Positioning MCP without changing the schema. |
+| `0.5.0` | 2026-06-15 | Added `book_persistence` to `RunConfig` and made persistent resting-order behavior the product default. Cached replays were regenerated with persistent-book semantics. |
+| `0.6.0` | 2026-06-15 | Renamed attribution semantics in prose/UI to heuristic impact estimates and added optional metrics-level `counterfactual_attribution` for representative paired ablation deltas: `exogenous_shock`, `peer_cascade`, `own_exit`, and `residual_market_behavior`. |

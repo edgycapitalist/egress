@@ -22,9 +22,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # repo root, for a file run
 
 from agents.analyst.baseline import render_summary
+from engine.attribution import estimate_counterfactual_attribution
 from engine.core import Engine
 from engine.presets import DEFAULT_POSITION_FRAC, PRESETS
-from engine.replay.recorder import Recorder
+from engine.replay.recorder import Recorder, replace_metrics
 from engine.scenarios import flagship_scenario
 from gateway.run_config import build_run_config
 
@@ -35,6 +36,9 @@ def _record(cfg, stem: str) -> str:
     path = REPLAY_DIR / f"{stem}.ndjson"
     with Recorder(str(path)) as rec:
         metrics = Engine(cfg, recorder=rec).run_baseline()
+    counterfactual = estimate_counterfactual_attribution(cfg, metrics)
+    metrics = metrics.model_copy(update={"counterfactual_attribution": counterfactual})
+    replace_metrics(path, metrics)
     sidecar = path.with_suffix(".analysis.txt")
     summary = render_summary(cfg.model_dump(), metrics.model_dump())
     sidecar.write_text(summary + "\n", encoding="utf-8")
