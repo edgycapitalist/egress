@@ -23,7 +23,9 @@ from agents.critic.episode import episode_for_symbol, load_episode, signature
 from agents.critic.schema import ADJ_MAX, ADJ_MIN, CalibrationAdjustments
 from agents.orchestrator.driver import run_baseline_simulation
 from engine.baseline import baseline_stances
+from engine.scenarios import flagship_scenario
 from engine.schema import INVESTOR_TYPES
+from eval.backtest import over_rational_book_config
 
 # A genuinely violent unwind (matches the shipped baseline run) and an over-rational
 # one, used to exercise both verdicts.
@@ -140,7 +142,11 @@ async def test_baseline_critic_writes_report_end_to_end() -> None:
 @pytest.mark.asyncio
 async def test_calm_seeded_run_is_flagged_too_calm() -> None:
     calm = calm_adjustments(1.0).model_dump()
-    res = await run_baseline_simulation(with_critic=True, adjustments=calm)
+    res = await run_baseline_simulation(
+        over_rational_book_config(flagship_scenario()),
+        with_critic=True,
+        adjustments=calm,
+    )
     report = res["calibration_report"]
     assert report["verdict"] == "too_calm"
     # The over-rational crowd cleared the position with little price impact.

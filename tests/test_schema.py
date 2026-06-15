@@ -4,6 +4,7 @@ import pytest
 from engine.schema import (
     INVESTOR_TYPES,
     STANCE_KEYS,
+    BookPersistence,
     CrowdingMix,
     EnsembleCaseSummary,
     EnsembleResult,
@@ -55,6 +56,8 @@ def test_valid_config_parses() -> None:
     assert cfg.time_scale.session_hours() == 6.5
     assert cfg.peer_crowding is None
     assert cfg.evidence_summary is None
+    assert cfg.book_persistence.enabled is True
+    assert cfg.book_persistence.resting_ttl < cfg.book_persistence.max_order_age
 
 
 def test_run_config_accepts_peer_crowding_and_evidence() -> None:
@@ -97,6 +100,15 @@ def test_peer_crowding_bounds_are_enforced() -> None:
         PeerCrowdingProfile(overlap_pct=1.2)
     with pytest.raises(ValueError):
         PeerCrowdingProfile(correlated_exit_probability=-0.1)
+
+
+def test_book_persistence_defaults_and_bounds() -> None:
+    persistence = BookPersistence()
+    assert persistence.enabled is True
+    assert persistence.base_cancel_rate > 0
+    assert persistence.maker_replenish_rate > 0
+    with pytest.raises(ValueError, match="max_order_age"):
+        BookPersistence(resting_ttl=10, max_order_age=5)
 
 
 def test_old_tick_and_metrics_records_default_new_fields() -> None:

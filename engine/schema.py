@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-SCHEMA_VERSION = "0.4.0"
+SCHEMA_VERSION = "0.5.0"
 
 #: Reference daily realized volatility. A name at this level has ``vol_gain == 1``
 #: (the crisis-fragile regime the engine was originally tuned to); a calmer name
@@ -225,6 +225,50 @@ class HaltRule(BaseModel):
     pause_ticks: int = Field(gt=0)
 
 
+class BookPersistence(BaseModel):
+    """Controls persistent resting-order behavior in the simulated book.
+
+    ``enabled=False`` is an explicit legacy/test fresh-auction mode. The product
+    default is persistent: orders age, stale provider liquidity can cancel, and
+    replenishment slows as stress rises.
+    """
+
+    enabled: bool = True
+    resting_ttl: int = Field(
+        default=20,
+        gt=0,
+        description="Age in ticks after which resting provider orders are stale.",
+    )
+    base_cancel_rate: float = Field(
+        default=0.02,
+        ge=0,
+        le=1,
+        description="Per-tick stale-order cancel probability in calm markets.",
+    )
+    stress_cancel_multiplier: float = Field(
+        default=0.45,
+        ge=0,
+        description="Extra cancel pressure applied as stress approaches 1.",
+    )
+    maker_replenish_rate: float = Field(
+        default=0.35,
+        ge=0,
+        le=1,
+        description="Fraction of potential provider quotes refreshed in calm markets.",
+    )
+    max_order_age: int = Field(
+        default=80,
+        gt=0,
+        description="Hard age cap after which resting orders are cancelled.",
+    )
+
+    @model_validator(mode="after")
+    def _age_bounds(self) -> BookPersistence:
+        if self.max_order_age < self.resting_ttl:
+            raise ValueError("max_order_age must be >= resting_ttl")
+        return self
+
+
 class RunConfig(BaseModel):
     run_id: str
     seed: int = 42
@@ -242,6 +286,7 @@ class RunConfig(BaseModel):
     time_scale: TimeScale = Field(default_factory=TimeScale)
     scenario_mode: ScenarioMode = "historical_saved"
     evidence_summary: EvidenceSummary | None = None
+    book_persistence: BookPersistence = Field(default_factory=BookPersistence)
     crisis_intensity: float = Field(
         default=1.0,
         ge=0,

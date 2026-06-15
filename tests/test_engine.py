@@ -76,6 +76,89 @@ def test_time_scale_sets_natural_volume_and_exit_horizon() -> None:
     assert eng.trader.child_size(0) == 2500
 
 
+def _maker_only_config(**book_persistence) -> RunConfig:
+    data = flagship_scenario().model_dump()
+    data["run_id"] = "persistent-book"
+    data["position"]["quantity"] = 10
+    data["exit_speed"] = {"mode": "twap", "horizon_ticks": 100}
+    data["crowding_mix"] = dict(
+        forced_seller=0.0,
+        panic_seller=0.0,
+        trend_follower=0.0,
+        bargain_hunter=0.0,
+        market_maker=1.0,
+        holder=0.0,
+    )
+    data["population_size"] = 20
+    data["shock_schedule"] = []
+    data["max_ticks"] = 5
+    data["ticks_per_window"] = 1
+    data["book_persistence"] = {
+        "enabled": True,
+        "resting_ttl": 20,
+        "base_cancel_rate": 0.0,
+        "stress_cancel_multiplier": 0.0,
+        "maker_replenish_rate": 1.0,
+        "max_order_age": 80,
+        **book_persistence,
+    }
+    return RunConfig(**data)
+
+
+def test_engine_persists_resting_orders_across_ticks() -> None:
+    eng = Engine(_maker_only_config())
+    eng.start()
+    eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+    first_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    eng.advance(baseline_stances(0.0, 0.0, 1), 1)
+    orders = {order.order_id: order for order in eng.book.resting_orders()}
+
+    persisted = first_ids & set(orders)
+    assert persisted
+    assert any(orders[order_id].age >= 1 for order_id in persisted)
+
+
+def test_engine_cancels_stale_resting_orders_before_replenishing() -> None:
+    eng = Engine(_maker_only_config(resting_ttl=1, base_cancel_rate=1.0))
+    eng.start()
+    eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+    first_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    eng.advance(baseline_stances(0.0, 0.0, 1), 1)
+    current_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    assert first_ids
+    assert first_ids.isdisjoint(current_ids)
+
+
+def test_halted_ticks_still_age_persistent_book() -> None:
+    eng = Engine(_maker_only_config())
+    eng.start()
+    eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+    first_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    eng.halt._pause_remaining = 2
+    eng.advance(baseline_stances(0.0, 0.0, 1), 1)
+    orders = {order.order_id: order for order in eng.book.resting_orders()}
+
+    assert first_ids
+    assert any(orders[order_id].age >= 1 for order_id in first_ids & set(orders))
+
+
+def test_legacy_fresh_auction_mode_remains_explicit() -> None:
+    eng = Engine(_maker_only_config(enabled=False))
+    eng.start()
+    eng.advance(baseline_stances(0.0, 0.0, 0), 1)
+    first_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    eng.advance(baseline_stances(0.0, 0.0, 1), 1)
+    current_ids = {order.order_id for order in eng.book.resting_orders()}
+
+    assert first_ids
+    assert first_ids.isdisjoint(current_ids)
+
+
 def test_peer_crowding_emits_peer_actions_from_engine_tick() -> None:
     data = flagship_scenario().model_dump()
     data["run_id"] = "peer-actions"

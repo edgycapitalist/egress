@@ -23,7 +23,7 @@ import numpy as np
 
 from engine.halt import HaltController
 from engine.metrics.metrics import compute_metrics
-from engine.orderbook.book import OrderBook, snap_to_tick
+from engine.orderbook.book import OrderBook, RestingOrder, snap_to_tick
 from engine.population.peers import PeerCohorts
 from engine.population.population import MarketView, OrderIntent, Population
 from engine.population.trader import ExitTrader
@@ -194,6 +194,9 @@ class Engine:
 
         if trading_allowed:
             fills, actions, volume, peer_actions, trading_impact = self._trade(view, stances)
+        elif self.config.book_persistence.enabled:
+            self.book.age_orders()
+            self._cancel_stale_liquidity(view.stress)
 
         impact = ImpactAttribution(
             exogenous_shock_bps=round(exogenous_shock_bps, 4),
@@ -238,12 +241,26 @@ class Engine:
     def _trade(
         self, view: MarketView, stances: dict[InvestorType, Stance]
     ) -> tuple[list[Fill], dict[str, int], int, PeerActionCounts, ImpactAttribution]:
-        # Fresh liquidity each tick: providers repost, aggressors sweep it.
-        self.book.cancel_all()
+        persistence = self.config.book_persistence
+        if persistence.enabled:
+            self.book.age_orders()
+            self._cancel_stale_liquidity(view.stress)
+        else:
+            self.book.cancel_all()
+
         liquidity, aggressors, actions = self.population.step(view, stances, self.rng)
+        if persistence.enabled:
+            liquidity = self._persistent_liquidity(liquidity, view)
+            actions["market_maker"] = (
+                sum(1 for intent in liquidity if intent.investor_type == "market_maker") + 1
+            ) // 2
+            actions["bargain_hunter"] = sum(
+                1 for intent in liquidity if intent.investor_type == "bargain_hunter"
+            )
         peer_aggressors, peer_actions = self.peer_cohorts.step(view, self.rng)
         for intent in liquidity:
-            self.book.add_limit(intent.side, intent.price, intent.size, intent.investor_type)
+            price = self._non_marketable_liquidity_price(intent)
+            self.book.add_limit(intent.side, price, intent.size, intent.investor_type)
 
         # The exiting trader competes with the crowd in randomised order.
         trader_size = self.trader.child_size(self.recent_volume)
@@ -285,6 +302,87 @@ class Engine:
             liquidity_withdrawal_bps=withdrawal_bps,
         )
         return fills, actions, volume, peer_actions, impact
+
+    def _cancel_stale_liquidity(self, stress: float) -> None:
+        cfg = self.config.book_persistence
+        provider_types = {"market_maker", "bargain_hunter"}
+
+        def should_cancel(order: RestingOrder) -> bool:
+            if order.investor_type not in provider_types:
+                return False
+            if order.age >= cfg.max_order_age:
+                return True
+
+            stale = order.age >= cfg.resting_ttl
+            maker_stress_withdrawal = (
+                order.investor_type == "market_maker" and stress > 0.0
+            )
+            if not stale and not maker_stress_withdrawal:
+                return False
+
+            probability = cfg.base_cancel_rate + stress * cfg.stress_cancel_multiplier
+            if order.investor_type == "market_maker":
+                probability *= 1.35
+            if not stale:
+                probability *= stress
+            probability = float(np.clip(probability, 0.0, 1.0))
+            return bool(self.rng.random() < probability)
+
+        self.book.cancel_where(should_cancel)
+
+    def _persistent_liquidity(
+        self, liquidity: list[OrderIntent], view: MarketView
+    ) -> list[OrderIntent]:
+        cfg = self.config.book_persistence
+        accepted: list[OrderIntent] = []
+        refill_pressure = max(0.05, 1.0 - 0.85 * view.stress)
+        base_replenish = cfg.maker_replenish_rate * refill_pressure
+
+        for intent in liquidity:
+            if intent.price is None:
+                accepted.append(intent)
+                continue
+
+            replenish = base_replenish
+            size_scale = 1.0
+            price = intent.price
+            if intent.investor_type == "market_maker":
+                size_scale = max(0.05, 1.0 - 0.85 * view.stress)
+                gap = intent.price - view.last_price
+                price = view.last_price + gap * (1.0 + 1.5 * view.stress)
+            elif intent.investor_type == "bargain_hunter":
+                replenish = min(1.0, base_replenish + 0.25 * view.drop)
+                size_scale = max(0.25, 1.0 - 0.50 * view.stress)
+
+            if self.rng.random() > replenish:
+                continue
+            size = int(intent.size * size_scale)
+            if size <= 0:
+                continue
+            accepted.append(
+                OrderIntent(
+                    side=intent.side,
+                    size=size,
+                    price=snap_to_tick(price, self.tick_size),
+                    investor_type=intent.investor_type,
+                )
+            )
+
+        return accepted
+
+    def _non_marketable_liquidity_price(self, intent: OrderIntent) -> float:
+        if intent.price is None:
+            raise ValueError("liquidity intents must be limit orders")
+        price = intent.price
+        if intent.side == "buy":
+            best_ask = self.book.best_ask()
+            if best_ask is not None and price >= best_ask:
+                price = best_ask - self.tick_size
+        else:
+            best_bid = self.book.best_bid()
+            if best_bid is not None and price <= best_bid:
+                price = best_bid + self.tick_size
+        return max(self.tick_size, snap_to_tick(price, self.tick_size))
 
     # -- driver ------------------------------------------------------------ #
     def run_baseline(self) -> Metrics:

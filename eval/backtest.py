@@ -34,6 +34,13 @@ from agents.orchestrator.driver import run_baseline_simulation
 from engine.schema import RunConfig
 
 DEFAULT_MAX_ITERATIONS = 4
+OVER_RATIONAL_BOOK = {
+    "maker_replenish_rate": 0.90,
+    "base_cancel_rate": 0.0,
+    "stress_cancel_multiplier": 0.0,
+    "resting_ttl": 80,
+    "max_order_age": 300,
+}
 
 
 @dataclass
@@ -54,6 +61,23 @@ class BacktestResult:
     @property
     def final(self) -> Iteration:
         return self.iterations[-1]
+
+
+def over_rational_book_config(config: RunConfig) -> RunConfig:
+    """Make the calibration seed's support unrealistically sticky.
+
+    The shipped product default uses stress-withdrawing persistent liquidity. The
+    generator-critic demo starts from the known failure mode instead: sellers are
+    too calm and support replenishes too easily, then the critic has to sharpen the
+    crowd enough to reproduce the CVNA episode signature.
+    """
+    return config.model_copy(
+        update={
+            "book_persistence": config.book_persistence.model_copy(
+                update=OVER_RATIONAL_BOOK
+            )
+        }
+    )
 
 
 async def run_calibration_backtest(
@@ -78,6 +102,9 @@ async def run_calibration_backtest(
     episode = episode_for_symbol(symbol)
     if episode is None:
         raise ValueError(f"no curated episode for {symbol}; cannot backtest")
+
+    if start == "calm":
+        config = over_rational_book_config(config)
 
     running: CalibrationAdjustments = (
         calm_adjustments(intensity) if start == "calm" else identity_adjustments()
