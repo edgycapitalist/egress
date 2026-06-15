@@ -76,6 +76,7 @@ def frames_from_replay(
     analysis: str | None = None,
     ensemble: dict[str, Any] | None = None,
     config: dict[str, Any] | None = None,
+    platform: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield the ordered WebSocket frames for one recorded run.
 
@@ -99,6 +100,7 @@ def frames_from_replay(
         "schema_version": meta.get("schema_version"),
         "config": config if config is not None else meta.get("config"),
         "total_ticks": len(ticks),
+        "platform": platform,
     }
     for group in batch(ticks, batch_size):
         yield {"type": "ticks", "ticks": group}

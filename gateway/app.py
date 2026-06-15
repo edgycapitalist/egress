@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -187,11 +188,15 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
+    from agents.orchestrator.remote import orchestrator_mode, remote_configured
+
     return {
         "status": "ok",
         "flagship_replay": str(FLAGSHIP_REPLAY),
         "flagship_available": FLAGSHIP_REPLAY.exists(),
         "gemini_enabled": _gemini_enabled(),
+        "orchestrator_mode": orchestrator_mode(),
+        "agent_engine_configured": remote_configured(),
     }
 
 
@@ -214,10 +219,20 @@ async def scenario_defaults() -> dict[str, Any]:
         ),
         "gemini_enabled": _gemini_enabled(),
         "gemini_live_mode": _gemini_live_mode(),
+        "orchestrator_mode": __import__(
+            "agents.orchestrator.remote", fromlist=["orchestrator_mode"]
+        ).orchestrator_mode(),
         # Whether a live run can fetch real Alpha Vantage data, so the UI can say so
         # honestly instead of implying real data when only the synthetic fallback runs.
         "av_enabled": bool(os.environ.get("ALPHAVANTAGE_API_KEY")),
     }
+
+
+@app.get("/api/agents")
+async def agents_discovery() -> dict[str, Any]:
+    from agents.cards import discovery_payload
+
+    return discovery_payload()
 
 
 @app.get("/api/instrument")
@@ -327,13 +342,14 @@ async def _run_live(
     use_gemini: bool,
     gemini_mode: str | None = None,
     progress: ProgressSender | None = None,
-) -> tuple[str, str, str | None, dict[str, Any] | None]:
+) -> tuple[str, str, str | None, dict[str, Any] | None, str]:
     """Drive a fresh run. Returns (replay_path, source, analysis, ensemble)."""
     from agents.orchestrator.driver import (  # lazy: keeps cached path import-light
         run_baseline_ensemble,
         run_detailed_live_ensemble,
         run_fast_live_ensemble,
     )
+    from agents.orchestrator.remote import orchestrator_mode, run_remote_orchestrator
 
     from gateway.crisis import derive_crisis_intensity
 
@@ -347,8 +363,40 @@ async def _run_live(
         text, levers.get("symbol"), fetch_news=True
     )
     config = build_run_config(levers, live_data=True, crisis_intensity=intensity)
+    platform = "in_process"
 
-    if use_gemini and _gemini_enabled():
+    if orchestrator_mode() == "agent_engine":
+        await send("Routing run through the deployed Agent Engine orchestrator…")
+        timeout = float(os.getenv("EGRESS_REMOTE_ORCHESTRATOR_TIMEOUT_SECONDS", "60"))
+        try:
+            result = await run_remote_orchestrator(
+                {
+                    "scenario": levers,
+                    "scenario_prompt": scenario_prompt(levers),
+                    "use_gemini": use_gemini,
+                    "gemini_mode": gemini_mode or levers.get("gemini_mode"),
+                    "fallback_config": config.model_dump(),
+                },
+                timeout_seconds=timeout,
+            )
+            if isinstance(result.get("result"), dict):
+                result = result["result"]
+            platform = "agent_engine"
+            default_source = (
+                "live-gemini"
+                if use_gemini and not result.get("fallback_reason")
+                else "live-baseline"
+            )
+            source = str(result.get("source") or default_source)
+            ensemble = result.get("ensemble_result") or result.get("ensemble")
+        except Exception as exc:
+            await send("Agent Engine unavailable; running deterministic fallback…")
+            result = await run_baseline_ensemble(config)
+            result["fallback_reason"] = f"agent_engine_error:{exc.__class__.__name__}"
+            platform = "agent_engine_fallback"
+            source = "live-baseline"
+            ensemble = result.get("ensemble_result")
+    elif use_gemini and _gemini_enabled():
         from agents.common.env import gemini_live_mode, gemini_timeout_seconds
 
         requested_mode = (
@@ -389,10 +437,35 @@ async def _run_live(
 
     if result.get("error"):
         raise RuntimeError(str(result["error"]))
-    replay_ref = result.get("representative_replay_ref") or result.get("replay_ref")
+    replay_ref = _materialize_replay_result(result)
     if not replay_ref or not Path(replay_ref).exists():
         raise RuntimeError("live run produced no replay")
-    return replay_ref, source, result.get("analysis"), ensemble
+    return replay_ref, source, result.get("analysis"), ensemble, platform
+
+
+def _materialize_replay_result(result: dict[str, Any]) -> str | None:
+    replay_ref = result.get("representative_replay_ref") or result.get("replay_ref")
+    if replay_ref and Path(str(replay_ref)).exists():
+        return str(replay_ref)
+
+    replay = result.get("replay_ndjson") or result.get("replay_records")
+    if replay is None:
+        return str(replay_ref) if replay_ref else None
+    run_id = str(result.get("run_id") or "remote")
+    safe_run_id = "".join(ch for ch in run_id if ch.isalnum() or ch in {"-", "_"})[:80]
+    path = Path("runs") / f"{safe_run_id or 'remote'}-remote.ndjson"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(replay, str):
+        text = replay if replay.endswith("\n") else replay + "\n"
+    elif isinstance(replay, list):
+        text = "\n".join(
+            item if isinstance(item, str) else json.dumps(item)
+            for item in replay
+        ) + "\n"
+    else:
+        return None
+    path.write_text(text, encoding="utf-8")
+    return str(path)
 
 
 async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
@@ -403,7 +476,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
 
     if mode == "live":
         try:
-            replay_path, source, analysis, ensemble = await _run_live(
+            replay_path, source, analysis, ensemble, platform = await _run_live(
                 levers,
                 bool(request.get("gemini")),
                 request.get("gemini_mode"),
@@ -423,6 +496,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
             return
         cached_config, ensemble = _cached_overlay_config_and_ensemble(replay_file, levers)
         replay_path, source, analysis = str(replay_file), "cached", None
+        platform = "cached_replay"
 
     for frame in frames_from_replay(
         replay_path,
@@ -431,6 +505,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         analysis=analysis,
         ensemble=ensemble,
         config=cached_config if source == "cached" else None,
+        platform=platform,
     ):
         await ws.send_json(frame)
         # Pace the ticks for the animation; give the trailing frames (metrics /

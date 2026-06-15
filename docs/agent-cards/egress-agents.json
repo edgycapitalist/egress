@@ -1,0 +1,93 @@
+{
+  "protocol": "a2a-discovery-compatible",
+  "transport_status": "metadata_only_static_reference",
+  "cards": [
+    {
+      "name": "EgressRun",
+      "role": "orchestrator",
+      "framework": "google_adk",
+      "transport": "in_process_adk_or_agent_engine_remote",
+      "description": "SequentialAgent lifecycle for scenario setup, simulation, analysis, and optional critic.",
+      "inputs": ["scenario_raw", "scenario_config"],
+      "outputs": ["run_metrics", "analysis", "replay_ref", "ensemble_result"]
+    },
+    {
+      "name": "ScenarioAuthor",
+      "role": "scenario_author",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["market_data_mcp"],
+      "outputs": ["scenario_config", "scenario_brief"]
+    },
+    {
+      "name": "ForcedSellerMood",
+      "role": "archetype_stance",
+      "investor_type": "forced_seller",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["forced_seller_stance"]
+    },
+    {
+      "name": "PanicSellerMood",
+      "role": "archetype_stance",
+      "investor_type": "panic_seller",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["panic_seller_stance"]
+    },
+    {
+      "name": "TrendFollowerMood",
+      "role": "archetype_stance",
+      "investor_type": "trend_follower",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["trend_follower_stance"]
+    },
+    {
+      "name": "BargainHunterMood",
+      "role": "archetype_stance",
+      "investor_type": "bargain_hunter",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["bargain_hunter_stance"]
+    },
+    {
+      "name": "MarketMakerMood",
+      "role": "archetype_stance",
+      "investor_type": "market_maker",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["market_maker_stance"]
+    },
+    {
+      "name": "HolderMood",
+      "role": "archetype_stance",
+      "investor_type": "holder",
+      "framework": "google_adk",
+      "model_class": "gemini_fast",
+      "tools": ["news_mcp", "market_data_mcp"],
+      "outputs": ["holder_stance"]
+    },
+    {
+      "name": "Analyst",
+      "role": "analyst",
+      "framework": "google_adk",
+      "model_class": "gemini_strong",
+      "tools": ["vertex_search_rag", "memory_service"],
+      "outputs": ["analysis"]
+    },
+    {
+      "name": "CalibrationCritic",
+      "role": "critic",
+      "framework": "google_adk",
+      "model_class": "gemini_strong",
+      "tools": ["vertex_search_rag", "memory_service"],
+      "outputs": ["calibration_report", "calibration_adjustments"]
+    }
+  ]
+}

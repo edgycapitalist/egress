@@ -20,6 +20,7 @@ import type {
   Levers,
   Metrics,
   PeerCrowdingCase,
+  PlatformMode,
   RunConfig,
   RunSource,
   SourcedInput,
@@ -71,6 +72,13 @@ const SOURCE_LABEL: Record<RunSource, string> = {
   cached: "Saved example",
   "live-baseline": "Live (no AI)",
   "live-gemini": "Live (Gemini)",
+};
+
+const PLATFORM_LABEL: Record<string, string> = {
+  cached_replay: "Cached replay",
+  in_process: "Local ADK",
+  agent_engine: "Agent Engine",
+  agent_engine_fallback: "Agent Engine fallback",
 };
 
 export default function Page() {
@@ -178,6 +186,11 @@ export default function Page() {
           {state.source ? (
             <Badge tone={state.source === "live-gemini" ? "accent" : "neutral"}>
               {SOURCE_LABEL[state.source]}
+            </Badge>
+          ) : null}
+          {state.platform ? (
+            <Badge tone={state.platform === "agent_engine" ? "accent" : "neutral"}>
+              {platformLabel(state.platform)}
             </Badge>
           ) : null}
           <StatusPill status={state.status} halted={haltedNow} />
@@ -409,6 +422,10 @@ function caseLabel(c: PeerCrowdingCase): string {
   if (c === "high") return "high crowding";
   if (c === "custom") return "custom crowding";
   return "base crowding";
+}
+
+function platformLabel(mode: PlatformMode): string {
+  return PLATFORM_LABEL[mode] ?? mode.replaceAll("_", " ");
 }
 
 function scaleMix(mix: Record<string, number> | undefined): Levers["crowding_mix"] | null {

@@ -172,7 +172,7 @@ async def test_detailed_gemini_live_routes_to_ensemble(monkeypatch) -> None:
         "agents.orchestrator.driver.run_detailed_live_ensemble", fake_detailed
     )
 
-    replay_ref, source, analysis, ensemble = await gateway_app._run_live(
+    replay_ref, source, analysis, ensemble, platform = await gateway_app._run_live(
         {
             "symbol": "CVNA",
             "scenario_text": "CVNA faces a severe creditor shock.",
@@ -191,6 +191,7 @@ async def test_detailed_gemini_live_routes_to_ensemble(monkeypatch) -> None:
 
     assert Path(replay_ref).exists()
     assert source == "live-gemini"
+    assert platform == "in_process"
     assert analysis == "ensemble narrative"
     assert ensemble is not None and ensemble["type"] == "ensemble"
     assert "Peer-crowding evidence" in str(captured["prompt"])

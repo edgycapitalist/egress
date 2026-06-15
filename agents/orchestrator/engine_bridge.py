@@ -22,10 +22,12 @@ only ever carries the contract shapes.
 from __future__ import annotations
 
 import contextlib
+import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from engine.baseline import baseline_stances
 from engine.core import Engine
@@ -53,9 +55,10 @@ REPLAY_DIR = Path("runs")
 class RunHandle:
     """Per-run engine state held out-of-band (never in session.state)."""
 
-    engine: Engine
-    recorder: Recorder
+    engine: Engine | None
+    recorder: Recorder | None
     replay_path: str
+    remote: bool = False
 
 
 _RUNS: dict[str, RunHandle] = {}
@@ -68,9 +71,37 @@ def get_handle(run_id: str) -> RunHandle | None:
 def close_handle(run_id: str) -> None:
     """Close the recorder and drop the handle. Safe to call more than once."""
     handle = _RUNS.pop(run_id, None)
-    if handle is not None:
+    if handle is not None and handle.recorder is not None:
         with contextlib.suppress(Exception):
             handle.recorder.__exit__(None, None, None)
+
+
+def _engine_service_url() -> str | None:
+    return (
+        os.getenv("EGRESS_ENGINE_SERVICE_URL")
+        or os.getenv("ENGINE_SERVICE_URL")
+        or ""
+    ).strip() or None
+
+
+async def _engine_service_request(
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    try:
+        import httpx
+    except ImportError as exc:  # pragma: no cover - gateway extra provides this
+        raise RuntimeError("httpx is required for EGRESS_ENGINE_SERVICE_URL") from exc
+    base = _engine_service_url()
+    if not base:
+        raise RuntimeError("EGRESS_ENGINE_SERVICE_URL is not configured")
+    timeout = float(os.getenv("EGRESS_ENGINE_TIMEOUT_SECONDS", "60"))
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.request(method, f"{base.rstrip('/')}{path}", json=json_body)
+    response.raise_for_status()
+    return response.json()
 
 
 def _drop_stress_tick(state: dict, config: RunConfig) -> tuple[float, float, int]:
@@ -128,16 +159,32 @@ class SetupEngineAgent(BaseAgent):
 
         config = RunConfig.model_validate(raw_config)
         with timing_block(state, kind="engine_setup", name=self.name, run_id=config.run_id):
-            REPLAY_DIR.mkdir(parents=True, exist_ok=True)
-            replay_path = str(REPLAY_DIR / f"{config.run_id}.ndjson")
-            recorder = Recorder(replay_path)
-            recorder.__enter__()
-            engine = Engine(config, recorder=recorder)
-            market_state = engine.start()
-            _RUNS[config.run_id] = RunHandle(engine, recorder, replay_path)
+            if _engine_service_url():
+                result = await _engine_service_request(
+                    "POST",
+                    "/runs",
+                    json_body={"config": config.model_dump()},
+                )
+                market_state = result["market_state"]
+                replay_path = str(result.get("replay_ref") or "")
+                _RUNS[config.run_id] = RunHandle(
+                    engine=None,
+                    recorder=None,
+                    replay_path=replay_path,
+                    remote=True,
+                )
+            else:
+                REPLAY_DIR.mkdir(parents=True, exist_ok=True)
+                replay_path = str(REPLAY_DIR / f"{config.run_id}.ndjson")
+                recorder = Recorder(replay_path)
+                recorder.__enter__()
+                engine = Engine(config, recorder=recorder)
+                market_state_obj = engine.start()
+                market_state = market_state_obj.model_dump()
+                _RUNS[config.run_id] = RunHandle(engine, recorder, replay_path)
 
         delta = {
-            MARKET_STATE: market_state.model_dump(),
+            MARKET_STATE: market_state,
             REPLAY_REF: replay_path,
             TICK_WINDOW_INDEX: 0,
         }
@@ -169,7 +216,24 @@ class AdvanceEngineAgent(BaseAgent):
 
         stances = _coerce_stances(state, config)
         started = time.perf_counter()
-        market_state, _events = handle.engine.advance(stances, config.ticks_per_window)
+        if handle.remote:
+            result = await _engine_service_request(
+                "POST",
+                f"/runs/{config.run_id}/advance",
+                json_body={
+                    "stances": {key: value.model_dump() for key, value in stances.items()},
+                    "ticks": config.ticks_per_window,
+                },
+            )
+            market_state = result["market_state"]
+            events_emitted = len(result.get("ticks") or [])
+            done = bool(result.get("done"))
+        else:
+            assert handle.engine is not None
+            market_state_obj, events = handle.engine.advance(stances, config.ticks_per_window)
+            market_state = market_state_obj.model_dump()
+            events_emitted = len(events)
+            done = handle.engine.done
         record_timing(
             state,
             kind="engine_window",
@@ -178,17 +242,17 @@ class AdvanceEngineAgent(BaseAgent):
             run_id=config.run_id,
             window_index=int(state.get(TICK_WINDOW_INDEX, 0)),
             ticks_requested=config.ticks_per_window,
-            ticks_emitted=len(_events),
+            ticks_emitted=events_emitted,
         )
 
         window = int(state.get(TICK_WINDOW_INDEX, 0)) + 1
-        delta = {MARKET_STATE: market_state.model_dump(), TICK_WINDOW_INDEX: window}
+        delta = {MARKET_STATE: market_state, TICK_WINDOW_INDEX: window}
         for key, value in delta.items():
             state[key] = value
         # Stop the LoopAgent the moment the engine finishes (exit done, stall, or cap).
         yield Event(
             author=self.name,
-            actions=EventActions(state_delta=delta, escalate=handle.engine.done),
+            actions=EventActions(state_delta=delta, escalate=done),
         )
 
 
@@ -211,9 +275,15 @@ class FinalizeEngineAgent(BaseAgent):
             return
 
         with timing_block(state, kind="engine_finalize", name=self.name, run_id=config.run_id):
-            metrics = handle.engine.finalize()
+            if handle.remote:
+                result = await _engine_service_request("GET", f"/runs/{config.run_id}/metrics")
+                metrics_payload = result["metrics"]
+            else:
+                assert handle.engine is not None
+                metrics_obj = handle.engine.finalize()
+                metrics_payload = metrics_obj.model_dump()
             close_handle(config.run_id)
-        delta = {RUN_METRICS: metrics.model_dump(), REPLAY_REF: handle.replay_path}
+        delta = {RUN_METRICS: metrics_payload, REPLAY_REF: handle.replay_path}
         for key, value in delta.items():
             state[key] = value
         yield Event(author=self.name, actions=EventActions(state_delta=delta))

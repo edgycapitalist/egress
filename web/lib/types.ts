@@ -210,6 +210,12 @@ export interface EnsembleResult {
 }
 
 export type RunSource = "cached" | "live-baseline" | "live-gemini";
+export type PlatformMode =
+  | "cached_replay"
+  | "in_process"
+  | "agent_engine"
+  | "agent_engine_fallback"
+  | string;
 
 export interface ReplayPayload {
   schema_version: string | null;
@@ -221,7 +227,14 @@ export interface ReplayPayload {
 
 // Server → client frames.
 export type Frame =
-  | { type: "meta"; source: RunSource; schema_version: string; config: RunConfig; total_ticks: number }
+  | {
+      type: "meta";
+      source: RunSource;
+      schema_version: string;
+      config: RunConfig;
+      total_ticks: number;
+      platform?: PlatformMode | null;
+    }
   | { type: "ticks"; ticks: TickEvent[] }
   | { type: "metrics"; metrics: Metrics }
   | { type: "ensemble"; ensemble: EnsembleResult }

@@ -6,6 +6,7 @@ import type {
   Frame,
   Levers,
   Metrics,
+  PlatformMode,
   ReplayPayload,
   RunConfig,
   RunSource,
@@ -21,6 +22,7 @@ export type RunStatus = "idle" | "connecting" | "running" | "done" | "error";
 export interface RunState {
   status: RunStatus;
   source: RunSource | null;
+  platform: PlatformMode | null;
   config: RunConfig | null;
   ticks: TickEvent[];
   totalTicks: number;
@@ -34,6 +36,7 @@ export interface RunState {
 const EMPTY: RunState = {
   status: "idle",
   source: null,
+  platform: null,
   config: null,
   ticks: [],
   totalTicks: 0,
@@ -161,6 +164,7 @@ function reduce(s: RunState, frame: Frame): RunState {
         ...s,
         status: "running",
         source: frame.source,
+        platform: frame.platform ?? null,
         config: frame.config,
         totalTicks: frame.total_ticks,
         ticks: [],
