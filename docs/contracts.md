@@ -414,9 +414,9 @@ loop) —
 
 | Method & path | Body | Returns |
 | --- | --- | --- |
-| `POST /runs` | `RunConfig` | `{ run_id, market_state }` |
-| `POST /runs/{run_id}/advance` | `{ stances: {type: Stance}, ticks: k }` | `{ market_state, ticks: [TickEvent] }` |
-| `GET /runs/{run_id}/metrics` | — | `Metrics` |
+| `POST /runs` | `{ config: RunConfig }` | `{ run_id, market_state, replay_ref, state_backend }` |
+| `POST /runs/{run_id}/advance` | `{ stances: {type: Stance}, ticks: k }` | `{ run_id, market_state, ticks: [TickEvent], done, state_backend }` |
+| `GET /runs/{run_id}/metrics` | — | `{ run_id, metrics, replay_ref, state_backend }` |
 | `GET /runs/{run_id}/replay` | — | NDJSON stream (§3.4) |
 
 The "advance k ticks" step is a **deterministic tool call**, never an LLM agent.
@@ -449,6 +449,7 @@ an `LlmAgent` writes to. (Long-term memory across runs is separate — see
 | `analysis` | object/`str` | analyst (`output_key`) | gateway/frontend, memory | after analyse |
 | `calibration_report` | object | critic (`output_key`) | orchestrator, memory | after critic |
 | `calibration_adjustments` | object | critic / memory | archetypes | run start (read), run end (write) |
+| `memory_context` | object | memory bridge | analyst, critic | after finalize |
 
 **Rules that keep the parallel build clean:**
 

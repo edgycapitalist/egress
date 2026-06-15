@@ -50,7 +50,13 @@ what caused a real market move.
 
 ![Egress run flow](./docs/egress-run-flow.svg)
 
-The diagrams show the full target architecture. Boxes marked *planned* (cross-run memory, RAG grounding, and A2A transport) are specified but not yet built. What ships today is the deterministic engine, the ADK orchestration through the analyst and the **calibration critic**, the two MCP servers, the gateway plus frontend, and a Cloud Run deployment. The gateway currently calls the orchestrator in-process rather than over A2A.
+The diagrams show the full target architecture. On the dev branch, the platform
+hooks now exist for a deterministic engine service, Agent Engine routing, agent
+discovery cards, long-term memory interfaces, RAG retrieval, Redis-backed run
+state, and deployed MCP URLs. The currently deployed main revision may still be
+behind those hooks until the Phase 7 cloud resources and CI/CD promotion are
+completed. The local default remains in-process ADK orchestration so development
+and tests run offline.
 
 ### Calibration against a real episode
 
@@ -140,7 +146,7 @@ To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_
 | External data | Three MCP servers over the Model Context Protocol — Alpha Vantage **daily bars** (market data), Alpha Vantage **news headlines**, and free **positioning evidence** (user CSV, opt-in SEC EDGAR, curated fixtures, synthetic fallback). Daily only; no intraday or order-book/Level 2 feed. |
 | Gateway / BFF | FastAPI, WebSocket streaming of tick telemetry. |
 | Frontend | Next.js 15, React 19, shadcn/ui, Tailwind CSS. |
-| Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is provisioned for a planned tick-state layer and is not yet used in code. |
+| Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is the deployed-mode run-state/fanout backend, with an in-memory local fallback for tests. |
 
 See [`AGENTS.md`](./AGENTS.md) for the full build specification and [`docs/contracts.md`](./docs/contracts.md) for the engine and agents boundary.
 
