@@ -19,7 +19,14 @@ from google.adk.agents import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
 from agents.common.env import strong_model
-from agents.common.state import ANALYSIS, MARKET_STATE, REPLAY_REF, RUN_METRICS, SCENARIO_CONFIG
+from agents.common.state import (
+    ANALYSIS,
+    MARKET_STATE,
+    MEMORY_CONTEXT,
+    REPLAY_REF,
+    RUN_METRICS,
+    SCENARIO_CONFIG,
+)
 from agents.common.timing import (
     after_agent,
     after_model,
@@ -68,6 +75,23 @@ def _context_block(ctx: ReadonlyContext) -> str:
     instrument = scenario.get("instrument", {})
     position = scenario.get("position", {})
     mix = scenario.get("crowding_mix", {})
+    try:
+        from rag import format_snippets, retrieve_context
+
+        query = " ".join(
+            str(part)
+            for part in (
+                instrument.get("symbol"),
+                scenario.get("scenario_mode"),
+                scenario.get("evidence_summary"),
+                metrics.get("pct_stuck"),
+                metrics.get("max_drawdown_pct"),
+                "crowded exit liquidity stress microstructure",
+            )
+        )
+        rag_context = format_snippets(retrieve_context(query))
+    except Exception as exc:
+        rag_context = f"Retrieval unavailable: {exc.__class__.__name__}"
     return (
         "\n\n--- Run facts (the source of truth) ---\n"
         f"Instrument: {json.dumps(instrument)}\n"
@@ -79,7 +103,10 @@ def _context_block(ctx: ReadonlyContext) -> str:
         f"Shocks: {json.dumps(scenario.get('shock_schedule', []))}\n"
         f"Final market state: {json.dumps(market)}\n"
         f"Metrics: {json.dumps(metrics)}\n"
-        f"Replay file: {state.get(REPLAY_REF)}"
+        f"Replay file: {state.get(REPLAY_REF)}\n"
+        f"Memory context: {json.dumps(state.get(MEMORY_CONTEXT) or {})}\n"
+        "\n--- Retrieved reference snippets (source-labelled grounding) ---\n"
+        f"{rag_context}"
     )
 
 

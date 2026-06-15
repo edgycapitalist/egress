@@ -27,6 +27,7 @@ from agents.common.env import strong_model
 from agents.common.state import (
     CALIBRATION_ADJUSTMENTS,
     CALIBRATION_REPORT,
+    MEMORY_CONTEXT,
     RUN_METRICS,
     SCENARIO_CONFIG,
 )
@@ -80,13 +81,31 @@ def _evidence_block(ctx: ReadonlyContext) -> str:
         }
         for g in report.gaps
     ]
+    try:
+        from rag import format_snippets, retrieve_context
+
+        query = " ".join(
+            str(part)
+            for part in (
+                report.symbol,
+                report.episode_id,
+                report.flags,
+                "calibration crisis episode microstructure crowded exit",
+            )
+        )
+        rag_context = format_snippets(retrieve_context(query))
+    except Exception as exc:
+        rag_context = f"Retrieval unavailable: {exc.__class__.__name__}"
     return (
         "\n\n--- Calibration evidence (the source of truth) ---\n"
         f"Reference episode: {report.symbol or 'none'} ({report.episode_id or 'no reference'})\n"
         f"Deterministic verdict: {report.verdict} "
         f"(fidelity {report.plausibility_score:.0%}, flags {report.flags})\n"
         f"Per-axis gaps: {json.dumps(gaps)}\n"
-        f"Run metrics: {json.dumps(metrics)}"
+        f"Run metrics: {json.dumps(metrics)}\n"
+        f"Memory context: {json.dumps(state.get(MEMORY_CONTEXT) or {})}\n"
+        "\n--- Retrieved reference snippets (source-labelled grounding) ---\n"
+        f"{rag_context}"
     )
 
 
