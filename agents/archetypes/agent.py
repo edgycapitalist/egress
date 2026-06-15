@@ -155,15 +155,15 @@ def build_archetype_agent(investor_type: InvestorType) -> LlmAgent:
     """One archetype mood-setter ``LlmAgent`` for ``investor_type``."""
     # Imported lazily so the offline test suite can import this module without the
     # MCP tool wrappers pulling in anything heavy at module load.
-    from mcp.market_data.tools import MARKET_DATA_TOOLS
-    from mcp.news.tools import NEWS_TOOLS
+    from mcp.market_data.tools import market_data_tools
+    from mcp.news.tools import news_tools
 
     return LlmAgent(
         name=AGENT_NAMES[investor_type],
         model=fast_model(),
         instruction=_instruction_provider(investor_type),
         description=f"Sets the behavioural stance for {investor_type} investors.",
-        tools=[*NEWS_TOOLS, *MARKET_DATA_TOOLS],
+        tools=[*news_tools(), *market_data_tools()],
         output_schema=StanceOut,
         output_key=stance_key(investor_type),
         before_agent_callback=before_agent(AGENT_NAMES[investor_type]),

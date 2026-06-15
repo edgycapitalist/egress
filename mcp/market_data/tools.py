@@ -26,3 +26,14 @@ MARKET_DATA_TOOLS = [
     historical_window_tool,
     liquidity_profile_tool,
 ]
+
+
+def market_data_tools():
+    """Return deployed MCP tools when configured, otherwise local FunctionTools."""
+    from mcp.client import deployed_or_local_tools
+
+    return deployed_or_local_tools(
+        "MARKET_DATA_MCP_URL",
+        MARKET_DATA_TOOLS,
+        name="egress-market-data",
+    )

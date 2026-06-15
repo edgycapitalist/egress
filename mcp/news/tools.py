@@ -16,3 +16,10 @@ sentiment_tool = FunctionTool(get_sentiment)
 
 #: All News tools, for attaching to an agent's ``tools=`` list.
 NEWS_TOOLS = [event_news_tool, sentiment_tool]
+
+
+def news_tools():
+    """Return deployed MCP tools when configured, otherwise local FunctionTools."""
+    from mcp.client import deployed_or_local_tools
+
+    return deployed_or_local_tools("NEWS_MCP_URL", NEWS_TOOLS, name="egress-news")

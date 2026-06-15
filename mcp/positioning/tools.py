@@ -23,3 +23,13 @@ POSITIONING_TOOLS = [
     user_holdings_csv_tool,
 ]
 
+
+def positioning_tools():
+    """Return deployed MCP tools when configured, otherwise local FunctionTools."""
+    from mcp.client import deployed_or_local_tools
+
+    return deployed_or_local_tools(
+        "POSITIONING_MCP_URL",
+        POSITIONING_TOOLS,
+        name="egress-positioning",
+    )

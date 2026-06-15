@@ -114,7 +114,7 @@ def _finalize_scenario(seed_value: int):
 
 def build_scenario_author(*, seed_value: int | None = None) -> LlmAgent:
     """The Scenario Author ``LlmAgent`` (live Vertex path)."""
-    from mcp.market_data.tools import MARKET_DATA_TOOLS
+    from mcp.market_data.tools import market_data_tools
 
     from agents.common.env import fast_model
 
@@ -123,7 +123,7 @@ def build_scenario_author(*, seed_value: int | None = None) -> LlmAgent:
         model=fast_model(),
         instruction=INSTRUCTION,
         description="Parses the user's plain-language scenario into a validated RunConfig.",
-        tools=[*MARKET_DATA_TOOLS],
+        tools=[*market_data_tools()],
         output_schema=ScenarioDraft,
         output_key=SCENARIO_DRAFT,
         before_agent_callback=before_agent("ScenarioAuthor"),
