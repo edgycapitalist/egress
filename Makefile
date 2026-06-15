@@ -3,7 +3,7 @@
 # costs nothing and needs no cloud credentials.
 
 .DEFAULT_GOAL := help
-.PHONY: help init start stop restart demo demo-agents demo-live auth-check gateway positioning-mcp web web-install web-build test lint fmt build eval deploy check-prereqs
+.PHONY: help init start stop restart demo demo-agents demo-live auth-check gateway positioning-mcp web web-install web-build test lint fmt build eval eval-discrimination-full eval-holdout eval-latency deploy check-prereqs
 
 PYTHON ?= python3
 COMPOSE ?= docker compose
@@ -69,6 +69,15 @@ build: ## Build all service container images
 
 eval: ## Run the calibration backtest against the real CVNA 2022 episode (offline, no LLM)
 	$(PYTHON) -m eval
+
+eval-discrimination-full: ## Run the full calibration + holdout discrimination eval
+	$(PYTHON) -m eval.discrimination --split all --compare-gemini --min-baseline-accuracy 0.75
+
+eval-holdout: ## Run the holdout-only discrimination eval
+	$(PYTHON) -m eval.discrimination --split holdout --compare-gemini --min-baseline-accuracy 0.75
+
+eval-latency: ## Run the offline latency eval over the episode corpus
+	$(PYTHON) -m eval.latency
 
 deploy: ## Deploy agents to Agent Engine and services to Cloud Run (Phase 5)
 	@echo "deploy target is wired in Phase 5 (see scripts/deploy.sh and infra/)."
