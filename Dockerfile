@@ -23,7 +23,7 @@ COPY pyproject.toml README.md LICENSE ./
 # ---- Engine service (deterministic core, no LLM) — Phase 1 ----
 FROM base AS engine
 COPY engine/ ./engine/
-RUN pip install ".[data]"
+RUN pip install ".[service,data]"
 EXPOSE 8000
 CMD ["python", "-m", "engine.service"]
 
@@ -32,14 +32,14 @@ FROM base AS market_data_mcp
 COPY mcp/ ./mcp/
 RUN pip install ".[mcp,data]"
 EXPOSE 8101
-CMD ["python", "-m", "mcp.market_data.server"]
+CMD ["python", "mcp/market_data/server.py"]
 
 # ---- News MCP server — Phase 2 ----
 FROM base AS news_mcp
 COPY mcp/ ./mcp/
 RUN pip install ".[mcp]"
 EXPOSE 8102
-CMD ["python", "-m", "mcp.news.server"]
+CMD ["python", "mcp/news/server.py"]
 
 # ---- Positioning MCP server — Phase 4 ----
 FROM base AS positioning_mcp

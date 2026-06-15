@@ -29,6 +29,11 @@ gateway = [
     "websockets>=12.0",
     "httpx>=0.27",
 ]
+# FastAPI service wrappers for deterministic engine / platform smoke surfaces.
+service = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
 # Model Context Protocol servers (market data, news).
 mcp = [
     "mcp>=1.0",
@@ -41,7 +46,7 @@ data = [
 ]
 # Everything, for a full local install.
 all = [
-    "egress[agents,gateway,mcp,data]",
+    "egress[agents,gateway,service,mcp,data]",
 ]
 # Dev tooling.
 dev = [
@@ -57,7 +62,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 # The top-level Python packages that make up Egress.
-packages = ["agents", "engine", "mcp", "memory", "gateway"]
+packages = ["agents", "engine", "mcp", "memory", "gateway", "rag"]
 
 [tool.ruff]
 target-version = "py313"
