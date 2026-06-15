@@ -38,6 +38,7 @@ from agents.orchestrator.engine_bridge import (
     FinalizeEngineAgent,
     SetupEngineAgent,
 )
+from agents.orchestrator.memory_bridge import LoadMemoryContextAgent, PersistMemoryAgent
 from agents.scenario_author.agent import build_scenario_author
 
 # Backstop on loop iterations; real termination comes from the engine escalating
@@ -71,7 +72,9 @@ def build_orchestrator(*, baseline: bool, with_critic: bool = False) -> Sequenti
     sub_agents.append(SetupEngineAgent())
     sub_agents.append(build_simulate_loop(baseline=baseline))
     sub_agents.append(FinalizeEngineAgent())
+    sub_agents.append(LoadMemoryContextAgent())
     sub_agents.append(BaselineAnalystAgent() if baseline else build_analyst())
     if with_critic:
         sub_agents.append(BaselineCriticAgent() if baseline else build_critic())
+    sub_agents.append(PersistMemoryAgent())
     return SequentialAgent(name="EgressRun", sub_agents=sub_agents)

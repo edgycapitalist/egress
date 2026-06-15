@@ -23,6 +23,7 @@ The driver guarantees the per-run engine handle is closed even if the run errors
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Any
 
@@ -30,6 +31,7 @@ from engine.ensemble import run_ensemble
 from engine.schema import EvidenceSummary, RunConfig
 from google.adk.runners import InMemoryRunner
 from google.genai import types
+from memory import memory_context_for, write_run_outcome
 
 from agents.analyst.baseline import render_ensemble_summary
 from agents.common.env import assert_vertex_config, gemini_timeout_seconds, seed
@@ -146,6 +148,10 @@ async def run_baseline_ensemble(
 
     started = time.perf_counter()
     try:
+        try:
+            memory_context = memory_context_for(config.model_dump())
+        except Exception as exc:
+            memory_context = {"backend": "unavailable", "error": exc.__class__.__name__}
         ensemble = run_ensemble(
             config,
             replay_dir=replay_dir,
@@ -160,13 +166,32 @@ async def run_baseline_ensemble(
             run_id=ensemble.run_id,
             case_count=len(ensemble.cases),
         )
+        analysis = render_ensemble_summary(
+            config.model_dump(), ensemble.model_dump(), memory_context
+        )
+        representative = next(
+            (
+                case
+                for case in ensemble.cases
+                if case.case == ensemble.representative_case
+            ),
+            ensemble.cases[0],
+        )
+        with contextlib.suppress(Exception):
+            write_run_outcome(
+                config.model_dump(),
+                {
+                    **representative.metrics.model_dump(),
+                    "ensemble": ensemble.model_dump(),
+                },
+                analysis=analysis,
+            )
         return {
             "run_id": ensemble.run_id,
             "ensemble_result": ensemble.model_dump(),
             "representative_replay_ref": ensemble.representative_replay_ref,
-            "analysis": render_ensemble_summary(
-                config.model_dump(), ensemble.model_dump()
-            ),
+            "analysis": analysis,
+            "memory_context": memory_context,
             "timing_report": timing_state.get(TIMING_REPORT),
             "error": None,
         }

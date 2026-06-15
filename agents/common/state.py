@@ -34,6 +34,7 @@ REPLAY_REF = "replay_ref"  # str path/URI to the NDJSON replay
 ANALYSIS = "analysis"  # analyst output_key
 CALIBRATION_REPORT = "calibration_report"  # critic output_key (later phase)
 CALIBRATION_ADJUSTMENTS = "calibration_adjustments"  # memory <-> archetypes (later phase)
+MEMORY_CONTEXT = "memory_context"  # long-term memory loaded before analyst/critic
 
 # Non-user-facing latency telemetry for live/debug runs.
 TIMING_REPORT = "timing_report"

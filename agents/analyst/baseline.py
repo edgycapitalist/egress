@@ -15,7 +15,7 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 
-from agents.common.state import ANALYSIS, RUN_METRICS, SCENARIO_CONFIG
+from agents.common.state import ANALYSIS, MEMORY_CONTEXT, RUN_METRICS, SCENARIO_CONFIG
 from agents.common.timing import after_agent, before_agent
 
 
@@ -38,7 +38,24 @@ def _case_metrics(ensemble: dict, case: str) -> dict:
     return {}
 
 
-def render_ensemble_summary(scenario: dict, ensemble: dict) -> str:
+def _memory_line(memory_context: dict | None) -> str:
+    if not memory_context:
+        return ""
+    recent = memory_context.get("recent_scenarios") or []
+    calibration = memory_context.get("calibration_adjustments") or []
+    if not recent and not calibration:
+        return ""
+    parts: list[str] = []
+    if recent:
+        parts.append(f"{len(recent)} comparable prior run(s)")
+    if calibration:
+        parts.append(f"{len(calibration)} stored calibration adjustment(s)")
+    return "Memory context available: " + " and ".join(parts) + "."
+
+
+def render_ensemble_summary(
+    scenario: dict, ensemble: dict, memory_context: dict | None = None
+) -> str:
     """Plain-language summary of an ensemble from deterministic result bands."""
     inst = scenario.get("instrument", {})
     pos = scenario.get("position", {})
@@ -116,7 +133,9 @@ def render_ensemble_summary(scenario: dict, ensemble: dict) -> str:
         "Read this as an institutional stress result: under the stated assumptions, the exit "
         "gets harder as shared holders sell together, but it is not an absolute prediction."
     )
-    return "  ".join([verdict, cost, driver, attribution, source, language])
+    memory = _memory_line(memory_context)
+    parts = [verdict, cost, driver, attribution, source, memory, language]
+    return "  ".join(part for part in parts if part)
 
 
 def render_summary(scenario: dict, metrics: dict) -> str:
@@ -212,5 +231,8 @@ class BaselineAnalystAgent(BaseAgent):
         scenario = state.get(SCENARIO_CONFIG) or {}
         metrics = state.get(RUN_METRICS) or {}
         summary = render_summary(scenario, metrics)
+        memory = _memory_line(state.get(MEMORY_CONTEXT))
+        if memory:
+            summary = "  ".join([summary, memory])
         state[ANALYSIS] = summary
         yield Event(author=self.name, actions=EventActions(state_delta={ANALYSIS: summary}))
