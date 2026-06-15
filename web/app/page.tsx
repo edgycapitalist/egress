@@ -267,7 +267,7 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Inside the market"
-                  caption="What is happening under the price in the stylized order book. The top shows the buyers' orders (the support you sell into) drying up; the bottom shows which kinds of sellers are hitting the market each step. When sellers overwhelm the buyers, the simulated book empties or halts."
+                  caption="What is happening under the price in the stylized persistent order book. The top shows the buyers' resting orders (the support you sell into) aging, canceling, and drying up; the bottom shows which kinds of sellers are hitting the market each step. When sellers overwhelm the buyers, the simulated book empties or halts."
                 />
                 <LiveInteractions ticks={state.ticks} totalTicks={state.totalTicks} />
               </Card>

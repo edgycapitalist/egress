@@ -131,6 +131,14 @@ run starts). Consumed by engine setup and by the archetype agents.
       }
     ]
   },
+  "book_persistence": {            // optional; defaults to persistent simulated book
+    "enabled": true,               // false = explicit legacy/test fresh-auction mode
+    "resting_ttl": 20,             // ticks before provider orders are considered stale
+    "base_cancel_rate": 0.02,      // calm per-tick stale cancel probability
+    "stress_cancel_multiplier": 0.45,
+    "maker_replenish_rate": 0.35,  // calm fraction of potential provider quotes refreshed
+    "max_order_age": 80            // hard tick age cap for resting orders
+  },
   "crisis_intensity": 1.0          // crisis magnitude; 1.0 = neutral (omit = default)
 }
 ```
@@ -150,6 +158,9 @@ run starts). Consumed by engine setup and by the archetype agents.
 - `time_scale` defaults to `100` ticks per ADV session and `234` seconds per tick.
   If an exit horizon is set, explicit ticks win over hours, and hours win over days.
   The derived horizon caps the run inside `max_ticks`; `max_ticks` remains a hard cap.
+- `book_persistence` defaults to the persistent simulated book. If supplied,
+  cancel/replenish probabilities are bounded to `[0, 1]`, age fields are positive,
+  and `max_order_age >= resting_ttl`.
 
 **Liquidity semantics (v0.2.0).** The engine consumes the real instrument data so a
 run tracks the name, not just the scenario: resting book depth and per-agent order
@@ -157,8 +168,7 @@ sizes scale with `adv` (capped by `free_float`), the exit's participation works 
 an `adv`-derived natural volume, and `volatility` (relative to the `0.09` reference)
 scales how readily the name cascades — its stress transitions and the size of a
 price-shock gap. A deep, low-vol name (e.g. SPY) absorbs a large `%ADV` exit without
-halting; a thin, high-vol name (e.g. SIVB) closes. A name at the reference vol with
-the flagship's ADV reproduces the pre-v0.2.0 behaviour exactly.
+halting; a thin, high-vol name (e.g. SIVB) closes.
 
 **Crisis intensity (v0.3.0).** `crisis_intensity` is the overall magnitude of the
 described/news-driven crisis, **decoupled from trailing volatility**. Volatility is now
@@ -181,6 +191,14 @@ ADV-per-tick natural volume. Phase 3 adds ensemble envelopes. Phase 4 adds
 `mcp/positioning`, which can fill `peer_crowding` and `evidence_summary` from
 user-uploaded holdings CSV, opt-in SEC EDGAR public data, curated fixtures, or
 synthetic assumptions while preserving old replay compatibility.
+
+**Persistent book controls (v0.5.0).** `book_persistence` makes the normal engine
+path a stylized persistent limit-order-book simulation. Resting orders preserve
+price-time priority across ticks, age each tick, cancel when stale or too old, and
+face higher seeded cancel probabilities when stress rises. Market-maker quotes
+replenish more slowly, quote smaller size, and sit wider from the last price under
+stress. `enabled=false` keeps the old fresh-auction behavior available only as an
+explicit legacy/test mode. This is not an observed order-book or Level 2 feed.
 
 ---
 
