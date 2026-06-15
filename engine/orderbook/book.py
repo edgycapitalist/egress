@@ -13,6 +13,7 @@ to the instrument tick grid on entry.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 
 Side = str  # "buy" | "sell"
@@ -26,6 +27,7 @@ class RestingOrder:
     size: int  # remaining shares
     investor_type: str
     seq: int  # global arrival sequence, for time priority
+    age: int = 0  # ticks spent resting in the book
 
 
 @dataclass
@@ -85,8 +87,50 @@ class OrderBook:
         return sum(o.size for o in book_side[price])
 
     # -- mutation ---------------------------------------------------------- #
+    def resting_orders(self, side: Side | None = None) -> list[RestingOrder]:
+        """Return a stable debug snapshot of resting orders, oldest first."""
+        if side == "buy":
+            orders = [o for q in self._bids.values() for o in q]
+        elif side == "sell":
+            orders = [o for q in self._asks.values() for o in q]
+        else:
+            orders = [o for q in self._bids.values() for o in q]
+            orders.extend(o for q in self._asks.values() for o in q)
+        return sorted(orders, key=lambda o: o.seq)
+
+    def age_orders(self) -> None:
+        """Advance the resting age of every order by one engine tick."""
+        for order in self._by_id.values():
+            order.age += 1
+
+    def cancel_where(self, predicate: Callable[[RestingOrder], bool]) -> tuple[int, int]:
+        """Cancel resting orders matching ``predicate``.
+
+        Returns ``(order_count, share_count)`` so the engine/tests can account for
+        how much displayed liquidity withdrew.
+        """
+        cancelled_orders = 0
+        cancelled_shares = 0
+        for book_side in (self._bids, self._asks):
+            for price in list(book_side):
+                queue = book_side[price]
+                kept: deque[RestingOrder] = deque()
+                while queue:
+                    order = queue.popleft()
+                    if predicate(order):
+                        cancelled_orders += 1
+                        cancelled_shares += order.size
+                        self._by_id.pop(order.order_id, None)
+                    else:
+                        kept.append(order)
+                if kept:
+                    book_side[price] = kept
+                else:
+                    del book_side[price]
+        return cancelled_orders, cancelled_shares
+
     def cancel_all(self) -> None:
-        """Clear every resting order. Used by the per-tick liquidity refresh."""
+        """Clear every resting order. Kept for explicit legacy/test fresh-auction mode."""
         self._bids.clear()
         self._asks.clear()
         self._by_id.clear()
