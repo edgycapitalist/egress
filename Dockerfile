@@ -60,6 +60,7 @@ COPY engine/ ./engine/
 COPY mcp/ ./mcp/
 COPY memory/ ./memory/
 COPY gateway/ ./gateway/
+COPY eval/ ./eval/
 COPY docs/replays/ ./docs/replays/
 # gateway + agents (ADK / google-genai) so the deployed service can run the live
 # Gemini pipeline as well as cached replay. Gemini is reached only via Vertex AI

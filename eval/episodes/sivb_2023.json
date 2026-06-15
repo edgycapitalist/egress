@@ -1,0 +1,21 @@
+{
+  "id": "sivb_2023",
+  "symbol": "SIVB",
+  "title": "SVB Financial March 2023 bank-run collapse",
+  "window": "2023-03-01 to 2023-03-10",
+  "split": "calibration",
+  "group": "illiquid",
+  "expected_exit": "closed",
+  "instrument": {
+    "reference_price": 267.0,
+    "adv": 1300000,
+    "free_float": 59000000,
+    "volatility": 0.1,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public daily-close and liquidity reconstruction for the March 2023 SIVB failure window.",
+  "note": "Concentrated financial stock with a fast confidence shock; the public equity stopped being normally tradeable.",
+  "closes": [267.83, 270.24, 267.16, 284.39, 267.83, 161.79, 106.04, 39.4]
+}

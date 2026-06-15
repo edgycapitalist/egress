@@ -1,0 +1,25 @@
+{
+  "id": "cvna_2022",
+  "symbol": "CVNA",
+  "title": "Carvana late-2022 crowded unwind",
+  "window": "2022-11-01 to 2022-12-09",
+  "split": "calibration",
+  "group": "illiquid",
+  "expected_exit": "closed",
+  "instrument": {
+    "reference_price": 15.0,
+    "adv": 12000000,
+    "free_float": 90000000,
+    "volatility": 0.09,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public daily-close and liquidity reconstruction for the late-2022 CVNA solvency episode.",
+  "note": "Crowded long/short name; bankruptcy fears and creditor-cooperation news produced a disorderly exit.",
+  "closes": [
+    15.42, 14.05, 13.1, 13.62, 14.4, 13.71, 12.05, 13.3, 13.58, 12.74,
+    13.02, 12.1, 11.18, 11.45, 10.62, 9.88, 9.41, 8.76, 8.13, 7.95,
+    7.34, 6.92, 6.85, 7.18, 6.81, 6.74, 4.51, 3.83, 4.09
+  ]
+}

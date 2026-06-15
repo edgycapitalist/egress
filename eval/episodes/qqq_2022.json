@@ -1,0 +1,21 @@
+{
+  "id": "qqq_2022",
+  "symbol": "QQQ",
+  "title": "Nasdaq 100 ETF inflation-rate drawdown",
+  "window": "2022 rate-shock drawdown reference",
+  "split": "holdout",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 370.0,
+    "adv": 45000000,
+    "free_float": 550000000,
+    "volatility": 0.018,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public ETF liquidity reference for the 2022 growth drawdown.",
+  "note": "Large ETF with broad two-sided turnover; holdout open-exit case.",
+  "closes": [370.0, 361.4, 350.8, 338.2, 327.6, 319.4, 328.5, 340.2]
+}

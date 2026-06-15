@@ -1,0 +1,21 @@
+{
+  "id": "frc_2023",
+  "symbol": "FRC",
+  "title": "First Republic regional-bank confidence shock",
+  "window": "2023-03 to 2023-04",
+  "split": "calibration",
+  "group": "illiquid",
+  "expected_exit": "closed",
+  "instrument": {
+    "reference_price": 115.0,
+    "adv": 1800000,
+    "free_float": 180000000,
+    "volatility": 0.12,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public daily-close and pre-crisis liquidity reference for the 2023 FRC collapse.",
+  "note": "Deposit-flight confidence shock in a thin regional-bank equity; public holders faced a closing exit.",
+  "closes": [115.0, 108.7, 81.76, 31.21, 39.63, 34.27, 23.03, 14.26, 13.99, 3.51]
+}

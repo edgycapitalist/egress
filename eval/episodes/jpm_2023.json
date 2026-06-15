@@ -1,0 +1,21 @@
+{
+  "id": "jpm_2023",
+  "symbol": "JPM",
+  "title": "JPMorgan regional-bank scare",
+  "window": "2023-03 banking stress reference",
+  "split": "holdout",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 130.0,
+    "adv": 13000000,
+    "free_float": 2900000000,
+    "volatility": 0.022,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public liquidity reference for a large-bank stress window.",
+  "note": "Large-cap bank with deep institutional turnover; holdout open-exit case.",
+  "closes": [130.0, 126.7, 123.4, 121.2, 124.1, 127.8, 129.5]
+}

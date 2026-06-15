@@ -1,19 +1,19 @@
-"""Curated instrument presets — real reference data for a few named episodes.
+"""Curated instrument presets loaded from the Phase 6 eval episode corpus.
 
 Representative public values (price, ADV, free float, daily realized volatility) for
-each name over its episode window — the same honest offline-reference approach as
-``agents/critic/episodes/``. They let one fixed engine configuration run against
-genuinely different real liquidity, so the liquid-vs-illiquid difference shows up with
-no per-episode tuning, no API key, and no live model.
+each name over its episode window live in ``eval/episodes/*.json``. Keeping the
+fixtures there lets the validation harness, the gateway ticker picker, and the
+deterministic cached path share one source of truth.
 
-Living in the engine keeps them dependency-light and available wherever the engine is
-(the gateway container included). The discrimination harness and the gateway's ticker
-picker both source the numbers from here, so there is one source of truth.
+This module stays dependency-light and imports only the standard library so the engine
+remains free of ADK, Gemini, and cloud packages.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 # A comparison position sized as this fraction of a name's ADV, so the exit is
 # comparable in liquidity terms across names rather than a fixed share count (which
@@ -32,22 +32,46 @@ class InstrumentPreset:
     volatility: float  # real daily realized volatility over the episode window
 
 
-#: Curated presets, in display order: two crowded names whose exit closed, two deep
-#: names that fell sharply but stayed tradeable.
-PRESETS: dict[str, InstrumentPreset] = {
-    "CVNA": InstrumentPreset(
-        "CVNA", "Carvana — late-2022", "illiquid", 15.00, 12_000_000, 90_000_000, 0.090
-    ),
-    "SIVB": InstrumentPreset(
-        "SIVB", "SVB Financial — Mar-2023", "illiquid", 267.00, 1_300_000, 59_000_000, 0.100
-    ),
-    "AAPL": InstrumentPreset(
-        "AAPL", "Apple — bad-earnings day", "liquid", 180.00, 55_000_000, 15_300_000_000, 0.018
-    ),
-    "SPY": InstrumentPreset(
-        "SPY", "S&P 500 ETF — drawdown", "liquid", 450.00, 75_000_000, 900_000_000, 0.010
-    ),
-}
+def _episode_dirs() -> tuple[Path, ...]:
+    """Candidate corpus locations for source-tree and container layouts."""
+    repo_root = Path(__file__).resolve().parents[1]
+    cwd = Path.cwd()
+    return (
+        repo_root / "eval" / "episodes",
+        cwd / "eval" / "episodes",
+    )
+
+
+def _load_presets() -> dict[str, InstrumentPreset]:
+    for directory in _episode_dirs():
+        if not directory.exists():
+            continue
+        presets: dict[str, InstrumentPreset] = {}
+        for path in sorted(directory.glob("*.json")):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            instrument = data["instrument"]
+            symbol = str(data["symbol"]).upper()
+            # The first record for a symbol wins, keeping display order stable if a
+            # future corpus adds more than one episode for the same ticker.
+            presets.setdefault(
+                symbol,
+                InstrumentPreset(
+                    symbol=symbol,
+                    name=str(data["title"]),
+                    group=str(data["group"]),
+                    reference_price=float(instrument["reference_price"]),
+                    adv=int(instrument["adv"]),
+                    free_float=int(instrument["free_float"]),
+                    volatility=float(instrument["volatility"]),
+                ),
+            )
+        if presets:
+            return presets
+    return {}
+
+
+#: Curated presets, in corpus display order.
+PRESETS: dict[str, InstrumentPreset] = _load_presets()
 
 
 def get_preset(symbol: str | None) -> InstrumentPreset | None:

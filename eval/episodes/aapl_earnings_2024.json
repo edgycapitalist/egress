@@ -1,0 +1,21 @@
+{
+  "id": "aapl_earnings_2024",
+  "symbol": "AAPL",
+  "title": "Apple mega-cap earnings stress",
+  "window": "2024 earnings volatility reference",
+  "split": "calibration",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 180.0,
+    "adv": 55000000,
+    "free_float": 15300000000,
+    "volatility": 0.018,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public mega-cap liquidity reference for an earnings-related stress window.",
+  "note": "Deep index constituent; a material percentage-of-ADV block should still clear under moderate stress.",
+  "closes": [180.2, 181.1, 178.6, 176.4, 177.3, 179.0, 175.8, 176.9]
+}

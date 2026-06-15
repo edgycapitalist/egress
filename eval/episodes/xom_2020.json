@@ -1,0 +1,21 @@
+{
+  "id": "xom_2020",
+  "symbol": "XOM",
+  "title": "Exxon Mobil oil-price shock",
+  "window": "2020 oil-demand shock reference",
+  "split": "holdout",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 60.0,
+    "adv": 17000000,
+    "free_float": 4200000000,
+    "volatility": 0.02,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public large-cap energy liquidity reference for the 2020 oil shock.",
+  "note": "Large-cap energy stock with deep turnover even during commodity stress; holdout open-exit case.",
+  "closes": [60.0, 56.3, 51.4, 47.2, 42.8, 39.9, 43.5, 46.0]
+}

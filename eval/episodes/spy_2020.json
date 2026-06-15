@@ -1,0 +1,21 @@
+{
+  "id": "spy_2020",
+  "symbol": "SPY",
+  "title": "S&P 500 ETF COVID drawdown",
+  "window": "2020-02 to 2020-03 stress reference",
+  "split": "calibration",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 450.0,
+    "adv": 75000000,
+    "free_float": 900000000,
+    "volatility": 0.01,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public ETF liquidity reference for the COVID drawdown.",
+  "note": "Broad ETF with very deep turnover; the eval expects market stress without a single-name exit closure.",
+  "closes": [450.0, 443.5, 431.2, 419.7, 405.4, 398.8, 412.5, 426.1]
+}

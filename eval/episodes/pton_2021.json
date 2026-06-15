@@ -1,0 +1,21 @@
+{
+  "id": "pton_2021",
+  "symbol": "PTON",
+  "title": "Peloton reopening-demand unwind",
+  "window": "2021-11 to 2022-01",
+  "split": "holdout",
+  "group": "illiquid",
+  "expected_exit": "closed",
+  "instrument": {
+    "reference_price": 80.0,
+    "adv": 2500000,
+    "free_float": 280000000,
+    "volatility": 0.08,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public liquidity and daily-close reconstruction for the PTON post-pandemic unwind.",
+  "note": "High-growth crowded ownership met a demand-reset shock; depth was thin relative to holder pressure.",
+  "closes": [80.0, 74.2, 62.1, 55.6, 47.3, 40.8, 35.5, 31.2, 27.1]
+}

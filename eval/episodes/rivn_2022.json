@@ -1,0 +1,21 @@
+{
+  "id": "rivn_2022",
+  "symbol": "RIVN",
+  "title": "Rivian post-IPO growth unwind",
+  "window": "2022 growth-equity drawdown reference",
+  "split": "holdout",
+  "group": "illiquid",
+  "expected_exit": "closed",
+  "instrument": {
+    "reference_price": 70.0,
+    "adv": 6000000,
+    "free_float": 650000000,
+    "volatility": 0.075,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public liquidity and close-path reference for the 2022 electric-vehicle growth unwind.",
+  "note": "Volatile post-IPO growth equity with concentrated holders; holdout closed-exit case.",
+  "closes": [70.0, 64.3, 58.7, 50.9, 45.2, 39.8, 34.6, 31.3, 28.4]
+}

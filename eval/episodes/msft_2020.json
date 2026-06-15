@@ -1,0 +1,21 @@
+{
+  "id": "msft_2020",
+  "symbol": "MSFT",
+  "title": "Microsoft COVID mega-cap stress",
+  "window": "2020-02 to 2020-03 stress reference",
+  "split": "calibration",
+  "group": "liquid",
+  "expected_exit": "open",
+  "instrument": {
+    "reference_price": 250.0,
+    "adv": 30000000,
+    "free_float": 7400000000,
+    "volatility": 0.02,
+    "halt_tier": 1
+  },
+  "position_frac_adv": 0.2,
+  "crisis_intensity": 0.4,
+  "source": "Representative public mega-cap liquidity reference for the COVID sell-off.",
+  "note": "Deep single-name liquidity; the eval expects stress but not a failed exit at 20 percent ADV.",
+  "closes": [250.0, 246.8, 240.1, 233.4, 226.2, 229.8, 238.0, 244.7]
+}
