@@ -91,13 +91,18 @@ def _flat_band(value: float | int | None) -> MetricBand:
 def _cached_overlay_config_and_ensemble(
     replay_file: Path, levers: dict[str, Any]
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Add the v0.4 evidence envelope to a committed replay without rewriting it."""
+    """Add the evidence envelope to a committed replay without changing book semantics."""
     meta, _ticks, metrics_raw = read_records(replay_file)
     raw_config = meta.get("config")
     if not isinstance(raw_config, dict) or not isinstance(metrics_raw, dict):
         return None, None
 
-    replay_config = RunConfig.model_validate(raw_config)
+    config_for_validation = dict(raw_config)
+    if "book_persistence" not in config_for_validation:
+        # Older cached files were recorded before persistent resting orders existed.
+        # Do not let today's RunConfig default relabel those fresh-auction ticks.
+        config_for_validation["book_persistence"] = {"enabled": False}
+    replay_config = RunConfig.model_validate(config_for_validation)
     peer_levers: dict[str, Any] = {
         "symbol": replay_config.instrument.symbol,
         "cusip": levers.get("cusip") or "",
