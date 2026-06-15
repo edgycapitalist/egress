@@ -106,8 +106,10 @@ Panels:
 * **Run progress** — evidence, assumption, simulation, and analysis phases from
   gateway status frames and result frames.
 * **Fill progress**, **Outcome range** (low/base/high crowding cards, worst seed
-  band, selected representative path metrics), **Evidence** (source and
-  confidence labels), and the **analyst explanation**.
+  band, selected representative path metrics), **Impact estimates** (heuristic
+  same-run estimates or paired counterfactual deltas when the representative
+  ablation ran), **Evidence** (source and confidence labels), and the **analyst
+  explanation**.
 
 `lib/useRun.ts` owns the WebSocket lifecycle and reduces the streamed frames into
 render-ready state; ticks are appended as batches arrive so the visualisation

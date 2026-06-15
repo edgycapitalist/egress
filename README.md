@@ -32,6 +32,14 @@ The defining design choice is that the language model is one part of the system,
 2. **A deterministic NumPy population acts on those stances.** Thousands of lightweight agents live as rows in NumPy arrays, parameterised by their type's current stance. Staggered per-agent thresholds decide who sells and when, which is what produces a cascade rather than a single synchronised dump.
 3. **An order-book engine matches the orders.** A stylized price-time-priority limit order book (`engine/orderbook/book.py`) matches each tick: a sell sweeps the highest resting bids first and fills at the bid price until the order is exhausted. Resting orders persist across ticks, age, cancel as they go stale, and replenish more slowly as stress rises. Fill rate, slippage, stuck percentage and drawdown are computed from the **matched quantities and traded prices** — not a price-impact formula — and a single-stock volatility halt is a fixed band rule. Each run is recorded to an NDJSON replay stream. Honest caveat: this is still a simulated book built from agents, not observed Level 2 depth; the price is the last traded level **plus an exogenous shock gap** the scenario applies at scheduled ticks.
 
+The app reports **impact estimates**, not exact causal attribution. Every run
+includes heuristic same-run estimates for scheduled shocks, trading impact, and
+liquidity withdrawal; representative paths can also include paired
+counterfactual deltas that rerun the scenario without peer cohorts, without
+exogenous shocks, and without the exit trader. Those deltas are useful
+diagnostics, but still approximate stress-model evidence rather than proof of
+what caused a real market move.
+
 **What the model does — and doesn't.** In the app's default live Gemini mode, Gemini builds the scenario assumptions once — the crisis schedule and crowd mood read — and Egress then runs the deterministic low/base/high ensemble without per-window model calls. The slower detailed ADK path can still have each archetype agent set three scalars for its investor type — aggressiveness, sell-threshold, participation — clamped to the contract's `Stance` ranges before the engine reads them. Either way, the model tunes assumptions and explanation; it does not add any market mechanic the deterministic baseline lacks. Remove every Gemini call and the engine still produces a full simulation — the baseline mode the test suite and offline demos run on.
 
 ### System architecture
