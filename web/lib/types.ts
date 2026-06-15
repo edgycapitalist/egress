@@ -84,6 +84,22 @@ export interface ImpactAttribution {
   exogenous_shock_bps: number;
   endogenous_trading_bps: number;
   liquidity_withdrawal_bps: number;
+  method?: "heuristic_impact_estimate";
+}
+
+export interface CounterfactualAttribution {
+  method: "paired_counterfactual_representative";
+  price_move_basis: "final_price_decline_bps";
+  full_run_bps: number;
+  exogenous_shock_bps: number;
+  peer_cascade_bps: number;
+  own_exit_bps: number;
+  residual_market_behavior_bps: number;
+  full_run_final_price: number | null;
+  no_peer_final_price: number | null;
+  no_exogenous_final_price: number | null;
+  no_exit_final_price: number | null;
+  notes: string;
 }
 
 export interface Shock {
@@ -164,6 +180,7 @@ export interface Metrics {
   halt_count: number;
   ticks_run: number;
   impact_attribution?: ImpactAttribution;
+  counterfactual_attribution?: CounterfactualAttribution | null;
   ensemble_case?: PeerCrowdingCase | null;
   ensemble_seed?: number | null;
 }

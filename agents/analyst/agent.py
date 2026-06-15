@@ -40,9 +40,14 @@ Cover, in a few tight paragraphs:
   slippage in plain terms, the drawdown, and the VWAP achieved versus the arrival
   price.
 - Whether a volatility halt triggered, and if so how it shaped the outcome.
-- If impact-attribution fields are present, separate scheduled crisis shock moves
-  from endogenous trading impact and liquidity-withdrawal impact. Do not imply
-  every price move came only from agent trades.
+- If impact-attribution fields are present, call them heuristic impact estimates:
+  scheduled crisis shock moves, endogenous trading impact, and liquidity-withdrawal
+  impact. Do not present them as exact causes, and do not imply every price move
+  came only from agent trades.
+- If counterfactual-attribution fields are present, you may discuss the paired
+  counterfactual deltas for exogenous shock, peer cascade, own exit, and residual
+  market behaviour, but call them approximate estimates rather than exact causal
+  truth.
 - If peer-crowding, time-scale, or evidence-summary fields are present, name the
   main assumption source/confidence and explain the result as a stress scenario.
 - The mechanism: why the exit closed (or did not). Tie it to the crowding mix —
@@ -52,7 +57,7 @@ Cover, in a few tight paragraphs:
 Be concrete and honest. Do not invent numbers beyond those given. If the position
 exited cleanly, say so. Use institutional-safe language such as "under this
 scenario" and "assumption-based stress result"; do not call it a forecast. Do not
-recommend trades; explain what happened."""
+recommend trades; explain what happened without overstating causal attribution."""
 
 
 def _context_block(ctx: ReadonlyContext) -> str:

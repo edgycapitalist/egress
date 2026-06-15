@@ -190,7 +190,7 @@ export default function Page() {
           Say you hold a large position and a crisis hits. Could you actually
           <span className="text-ink"> sell it before the exit closes</span> under explicit
           assumptions? Egress stress-tests that. It runs a simulated market of thousands of
-          traders, then shows the scenario range for price impact, fill rate, and unsold shares.
+          traders, then shows the scenario range for price-impact estimates, fill rate, and unsold shares.
         </p>
         <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
           <Info className="h-3 w-3 shrink-0" />
@@ -299,7 +299,7 @@ export default function Page() {
                   caption={
                     state.ensemble
                       ? "The scenario range across low, base, and high peer-crowding assumptions, plus the selected representative path."
-                      : "The simulated outcome: fill rate, price impact, and shares left unsold under these assumptions."
+                      : "The simulated outcome: fill rate, price-impact estimates, and shares left unsold under these assumptions."
                   }
                   right={state.ensemble ? <Badge tone="neutral">Scenario range, not forecast</Badge> : null}
                 />
