@@ -81,6 +81,7 @@ export default function Page() {
     levers: DEFAULT_LEVERS,
   });
   const [geminiEnabled, setGeminiEnabled] = useState(false);
+  const [geminiLiveMode, setGeminiLiveMode] = useState<"fast" | "detailed">("fast");
   const [avEnabled, setAvEnabled] = useState(false);
   const [sourced, setSourced] = useState<SourcedInput | null>(null);
   const [sourcedLoading, setSourcedLoading] = useState(false);
@@ -94,6 +95,7 @@ export default function Page() {
       .then((d) => {
         if (!d) return;
         setGeminiEnabled(Boolean(d.gemini_enabled));
+        setGeminiLiveMode(d.gemini_live_mode === "detailed" ? "detailed" : "fast");
         setAvEnabled(Boolean(d.av_enabled));
         setBuilder((b) => ({
           ...b,
@@ -186,15 +188,13 @@ export default function Page() {
       <div className="mb-4 rounded-[var(--radius)] border border-line bg-surface/60 px-4 py-3">
         <p className="max-w-3xl text-[13.5px] leading-relaxed text-ink">
           Say you hold a large position and a crisis hits. Could you actually
-          <span className="text-ink"> sell it before the exit closes</span>? Egress answers that.
-          It runs a simulated market of thousands of traders, then shows how far the price falls
-          while you sell, how much of your position you get out, and how much stays stuck.
+          <span className="text-ink"> sell it before the exit closes</span> under explicit
+          assumptions? Egress stress-tests that. It runs a simulated market of thousands of
+          traders, then shows the scenario range for price impact, fill rate, and unsold shares.
         </p>
         <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-faint">
           <Info className="h-3 w-3 shrink-0" />
-          The market itself runs on fixed, repeatable code. On a live Gemini run, a few AI agents
-          (Google Vertex AI) set how each kind of investor behaves and write the explanation.
-          Cached and baseline runs use simple stand-ins instead, with no AI.
+          {modeCopy(builder.mode, builder.gemini, geminiLiveMode)}
         </p>
       </div>
 
@@ -210,6 +210,7 @@ export default function Page() {
             onReset={reset}
             status={state.status}
             geminiEnabled={geminiEnabled}
+            geminiLiveMode={geminiLiveMode}
             avEnabled={avEnabled}
           />
         </Card>
@@ -266,7 +267,7 @@ export default function Page() {
               <Card className="fadeup overflow-hidden">
                 <CardHeader
                   title="Inside the market"
-                  caption="What is happening under the price. The top shows the buyers' orders (the support you sell into) drying up; the bottom shows which kinds of sellers are hitting the market each step. When sellers overwhelm the buyers, the book empties and trading stops."
+                  caption="What is happening under the price in the stylized order book. The top shows the buyers' orders (the support you sell into) drying up; the bottom shows which kinds of sellers are hitting the market each step. When sellers overwhelm the buyers, the simulated book empties or halts."
                 />
                 <LiveInteractions ticks={state.ticks} totalTicks={state.totalTicks} />
               </Card>
@@ -286,7 +287,7 @@ export default function Page() {
                 <Card className="fadeup overflow-hidden">
                   <CardHeader
                     title="Fill progress"
-                    caption="How much of your position actually sold versus how much is left stuck."
+                    caption="How much of your position sold in this scenario versus how much remains unsold."
                   />
                   <FillProgress ticks={state.ticks} config={state.config} />
                 </Card>
@@ -297,9 +298,10 @@ export default function Page() {
                   title={state.ensemble ? "Outcome range" : "Outcome"}
                   caption={
                     state.ensemble
-                      ? "The bottom line as a range: could you get out in low, base, and high peer-crowding cases, and which representative path is selected."
-                      : "The bottom line: could you get out, how far did the price move against you, and how much was left unsold."
+                      ? "The scenario range across low, base, and high peer-crowding assumptions, plus the selected representative path."
+                      : "The simulated outcome: fill rate, price impact, and shares left unsold under these assumptions."
                   }
+                  right={state.ensemble ? <Badge tone="neutral">Scenario range, not forecast</Badge> : null}
                 />
                 {state.ensemble ? (
                   <>
@@ -373,13 +375,13 @@ function Verdict({
             <span className="tnum font-semibold text-sell">{fmtPct(metrics.fill_rate, 0)}</span> of
             your position before the exit closed.{" "}
             <span className="tnum font-semibold text-sell">{fmtPct(metrics.pct_stuck, 0)}</span> was
-            left stuck, unsellable.
+            left unsold in this scenario.
           </>
         ) : (
           <>
-            You sold your whole position (
+            Under these assumptions, the full simulated block sold (
             <span className="tnum font-semibold text-buy">{fmtPct(metrics.fill_rate, 0)}</span>).
-            Nothing was left stuck. The exit stayed open.
+            Nothing was left unsold in this path.
           </>
         )}
       </p>
@@ -454,4 +456,17 @@ function EmptyState() {
       </div>
     </Card>
   );
+}
+
+function modeCopy(mode: "cached" | "live", gemini: boolean, geminiMode: "fast" | "detailed") {
+  if (mode === "cached") {
+    return "The market mechanics run on fixed, repeatable code. Saved examples replay recorded scenarios with no live data calls and no AI.";
+  }
+  if (!gemini) {
+    return "The market mechanics run on fixed, repeatable code. Deterministic live runs use baseline stances and current or fallback market data, with no AI calls.";
+  }
+  if (geminiMode === "detailed") {
+    return "The market mechanics run on fixed, repeatable code. Detailed Gemini mode may refresh representative archetype stances and writes the explanation; the ensemble metrics remain deterministic.";
+  }
+  return "The market mechanics run on fixed, repeatable code. Fast Gemini mode builds scenario assumptions once and writes the explanation; deterministic ensembles remain the authoritative output.";
 }

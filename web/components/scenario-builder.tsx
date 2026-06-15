@@ -66,7 +66,7 @@ const DEFAULT_PEER: Partial<PeerCrowdingProfile> = {
 
 const PEER_MODES: { key: PeerSourceMode; label: string; icon: React.ReactNode }[] = [
   { key: "assumption_led", label: "Assume", icon: <Users className="h-3.5 w-3.5" /> },
-  { key: "sec_evidence", label: "SEC 13F", icon: <FileSearch className="h-3.5 w-3.5" /> },
+  { key: "sec_evidence", label: "Public data", icon: <FileSearch className="h-3.5 w-3.5" /> },
   { key: "user_upload", label: "Upload", icon: <Upload className="h-3.5 w-3.5" /> },
 ];
 
@@ -123,6 +123,7 @@ export function ScenarioBuilder({
   onReset,
   status,
   geminiEnabled,
+  geminiLiveMode,
   avEnabled,
 }: {
   state: BuilderState;
@@ -131,6 +132,7 @@ export function ScenarioBuilder({
   onReset: () => void;
   status: RunStatus;
   geminiEnabled: boolean;
+  geminiLiveMode: "fast" | "detailed";
   avEnabled: boolean;
 }) {
   const { mode, levers } = state;
@@ -301,14 +303,16 @@ export function ScenarioBuilder({
                 onChange={(e) => setState({ ...state, gemini: e.target.checked })}
                 className="accent-[var(--color-accent)]"
               />
-              Use real Gemini (Vertex AI). This spends credits.
+              Use Gemini assumptions (Vertex AI). This spends credits.
             </label>
           ) : null}
           <p className="text-[11px] leading-relaxed text-ink-faint">
             {cached
               ? "Replays a saved example crash. Fully offline and identical every time, so it is the easiest way to start."
               : state.gemini
-                ? "Runs the simulation for real, with Gemini deciding how each kind of investor reacts to your scenario and the latest news."
+                ? geminiLiveMode === "detailed"
+                  ? "Runs live with detailed Gemini: scenario assumptions and representative archetype stance refreshes can use Vertex AI, while the deterministic ensemble remains authoritative."
+                  : "Runs live with fast Gemini: Vertex AI builds scenario assumptions once, then the deterministic ensemble runs the low/base/high stress range."
                 : "Runs the simulation on the ticker's current real market data. This reflects today's conditions, not the original crisis."}
           </p>
         </div>
@@ -578,7 +582,7 @@ export function ScenarioBuilder({
               <Caption>
                 Filters free quarterly SEC 13F holder rows. CVNA, SIVB, AAPL, and SPY have demo
                 ticker mappings; enter a CUSIP for other names. If holder rows are unavailable, the
-                run labels the curated or synthetic fallback.
+                run labels the curated or synthetic fallback instead of presenting it as SEC data.
               </Caption>
             </div>
           ) : null}
@@ -598,7 +602,7 @@ export function ScenarioBuilder({
               />
               <Caption>
                 Rows can include symbol, manager, shares, pct_adv, leverage_sensitivity, and
-                redemption_pressure. Uploaded evidence overrides SEC or synthetic assumptions.
+                redemption_pressure. Uploaded evidence overrides public-data or synthetic assumptions.
               </Caption>
             </div>
           ) : null}
@@ -755,7 +759,7 @@ function MiniSlider({
 
 function peerModeCaption(mode: PeerSourceMode): string {
   if (mode === "sec_evidence") {
-    return "Uses free public SEC 13F holder rows when available, then falls back to curated or synthetic assumptions with labels.";
+    return "Public evidence mode uses free SEC 13F holder rows when available, then labels any curated or synthetic fallback.";
   }
   if (mode === "user_upload") {
     return "Uses your uploaded holder rows first, so private or desk-curated evidence can drive the peer profile.";

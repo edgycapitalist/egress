@@ -208,6 +208,7 @@ async def scenario_defaults() -> dict[str, Any]:
             "sellers pile on, and bargain-hunter and market-maker support is thin."
         ),
         "gemini_enabled": _gemini_enabled(),
+        "gemini_live_mode": _gemini_live_mode(),
         # Whether a live run can fetch real Alpha Vantage data, so the UI can say so
         # honestly instead of implying real data when only the synthetic fallback runs.
         "av_enabled": bool(os.environ.get("ALPHAVANTAGE_API_KEY")),
@@ -304,6 +305,16 @@ def _gemini_enabled() -> bool:
         return True
     except Exception:
         return False
+
+
+def _gemini_live_mode() -> str:
+    """Expose the configured live Gemini strategy for honest UI copy."""
+    try:
+        from agents.common.env import gemini_live_mode
+
+        return gemini_live_mode()
+    except Exception:
+        return "fast"
 
 
 async def _run_live(
