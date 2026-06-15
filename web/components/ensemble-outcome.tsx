@@ -29,6 +29,13 @@ export function EnsembleOutcome({
   const bands = ensemble.bands;
   return (
     <div className="space-y-4 border-b border-line px-4 pb-4 pt-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Badge tone="neutral">Scenario range, not forecast</Badge>
+        <span className="text-[11px] leading-relaxed text-ink-faint">
+          Low/base/high cases show explicit assumptions, not a sellability prediction.
+        </span>
+      </div>
+
       <div className="grid gap-2 md:grid-cols-3">
         {ensemble.cases.map((summary) => (
           <CaseButton
@@ -63,7 +70,7 @@ export function EnsembleOutcome({
       <p className="text-[11.5px] leading-relaxed text-ink-faint">
         The cards are deterministic low/base/high peer-crowding cases across fixed seeds. The
         animation and detailed metrics below show the selected representative path, not the whole
-        range.
+        range or a forecast.
       </p>
     </div>
   );

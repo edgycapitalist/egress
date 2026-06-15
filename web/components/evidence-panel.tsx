@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type {
@@ -12,7 +13,7 @@ import { fmtPct } from "@/lib/utils";
 
 const SOURCE_LABELS: Record<EvidenceSource, string> = {
   alpha_vantage: "Alpha Vantage",
-  sec_edgar: "SEC 13F / EDGAR",
+  sec_edgar: "SEC 13F holder rows",
   user_upload: "User upload",
   curated_fixture: "Curated fixture",
   synthetic_assumption: "Synthetic assumption",
@@ -30,12 +31,24 @@ export function EvidencePanel({
   const summary = ensemble?.evidence_summary ?? config?.evidence_summary ?? null;
   const peer = config?.peer_crowding ?? firstPeer(ensemble);
   const items = summary?.items ?? [];
+  const peerSource = peer?.evidence_source ?? null;
+  const hasSecLookup = items.some((item) => item.field === "sec_lookup" && item.source === "sec_edgar");
+  const publicEvidenceMode = config?.scenario_mode === "sec_evidence" || hasSecLookup;
   const assumptionLed =
-    peer?.evidence_source === "synthetic_assumption" || config?.scenario_mode === "assumption_led";
+    peerSource === "synthetic_assumption" || config?.scenario_mode === "assumption_led";
   const secLookupOnly =
     Boolean(peer) &&
-    peer?.evidence_source !== "sec_edgar" &&
-    items.some((item) => item.field === "sec_lookup" && item.source === "sec_edgar");
+    peerSource !== "sec_edgar" &&
+    hasSecLookup;
+  const lowConfidencePublicFallback =
+    Boolean(peer) &&
+    publicEvidenceMode &&
+    peerSource !== "sec_edgar" &&
+    peer?.confidence === "low" &&
+    !secLookupOnly;
+  const curatedFixture =
+    peerSource === "curated_fixture" ||
+    items.some((item) => item.field === "peer_crowding" && item.source === "curated_fixture");
 
   if (!config && !ensemble) {
     return <p className="px-4 pb-4 text-[12px] text-ink-faint">Evidence labels appear after a run.</p>;
@@ -44,18 +57,30 @@ export function EvidencePanel({
   return (
     <div className="space-y-3 px-4 pb-4">
       {assumptionLed ? (
-        <div className="flex items-start gap-2 rounded-[8px] border border-halt/30 bg-halt/10 px-3 py-2 text-[11.5px] leading-relaxed text-halt">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <EvidenceWarning>
           Peer crowding is assumption-led. Treat the result as a transparent stress range, not an
           evidence-backed forecast.
-        </div>
+        </EvidenceWarning>
       ) : null}
 
       {secLookupOnly ? (
-        <div className="flex items-start gap-2 rounded-[8px] border border-halt/30 bg-halt/10 px-3 py-2 text-[11.5px] leading-relaxed text-halt">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <EvidenceWarning>
           SEC lookup only; peer assumptions came from curated or synthetic fallback evidence.
-        </div>
+        </EvidenceWarning>
+      ) : null}
+
+      {lowConfidencePublicFallback ? (
+        <EvidenceWarning>
+          Public evidence mode did not find usable SEC 13F holder rows. The peer profile is a
+          low-confidence fallback assumption.
+        </EvidenceWarning>
+      ) : null}
+
+      {curatedFixture ? (
+        <EvidenceWarning>
+          Peer crowding uses a curated demo fixture, not paid-grade holder coverage or a live
+          ownership feed.
+        </EvidenceWarning>
       ) : null}
 
       {summary?.summary ? (
@@ -73,6 +98,15 @@ export function EvidencePanel({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function EvidenceWarning({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 rounded-[8px] border border-halt/30 bg-halt/10 px-3 py-2 text-[11.5px] leading-relaxed text-halt">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>{children}</span>
     </div>
   );
 }
