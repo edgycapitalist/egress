@@ -1,29 +1,48 @@
 name: deploy
 
-# Continuous deployment: on every push to main, build both images and roll them
-# out to Cloud Run. Auth is via Workload Identity Federation — no service-account
-# key or secret is stored in the repo or in GitHub. The deploys use --image only,
-# so the services keep their existing env vars (the Alpha Vantage key, the Vertex
-# settings) and min-instances; nothing sensitive lives here.
+# Continuous deployment for the complete Egress platform path. A push to main
+# updates the existing Cloud Run services; it does not create a new frontend
+# service, so the project-number URL stays stable:
+# https://egress-frontend-978090004115.us-central1.run.app
 
 on:
   push:
     branches: [main]
-    paths-ignore: # docs / CI-only changes shouldn't rebuild + redeploy
+    paths-ignore:
       - "**.md"
       - ".github/**"
   workflow_dispatch: {}
 
 permissions:
   contents: read
-  id-token: write # required for Workload Identity Federation
+  id-token: write
 
 env:
   PROJECT: modern-girder-499022-d4
+  PROJECT_NUMBER: "978090004115"
   REGION: us-central1
   REPO_PATH: us-central1-docker.pkg.dev/modern-girder-499022-d4/egress
-  GATEWAY_URL: https://egress-gateway-cf7gk4edya-uc.a.run.app
-  GATEWAY_WS: wss://egress-gateway-cf7gk4edya-uc.a.run.app/ws/run
+
+  FRONTEND_URL: https://egress-frontend-978090004115.us-central1.run.app
+  GATEWAY_URL: https://egress-gateway-978090004115.us-central1.run.app
+  GATEWAY_WS: wss://egress-gateway-978090004115.us-central1.run.app/ws/run
+  ENGINE_URL: https://egress-engine-978090004115.us-central1.run.app
+  MARKET_DATA_MCP_URL: https://egress-market-data-mcp-978090004115.us-central1.run.app/mcp/
+  NEWS_MCP_URL: https://egress-news-mcp-978090004115.us-central1.run.app/mcp/
+  POSITIONING_MCP_URL: https://egress-positioning-mcp-978090004115.us-central1.run.app/mcp/
+
+  GATEWAY_SERVICE_ACCOUNT: egress-gateway-runtime@modern-girder-499022-d4.iam.gserviceaccount.com
+  ENGINE_SERVICE_ACCOUNT: egress-engine-runtime@modern-girder-499022-d4.iam.gserviceaccount.com
+  MCP_SERVICE_ACCOUNT: egress-mcp-runtime@modern-girder-499022-d4.iam.gserviceaccount.com
+  AGENT_SERVICE_ACCOUNT: egress-agent-runtime@modern-girder-499022-d4.iam.gserviceaccount.com
+  AGENT_STAGING_BUCKET: gs://egress-agent-staging-978090004115
+  AGENT_ENGINE_ID: projects/978090004115/locations/us-central1/reasoningEngines/3984250257792827392
+
+  VPC_CONNECTOR: egress-serverless
+  VERTEX_SEARCH_DATASTORE_ID: egress-crisis-corpus
+  VERTEX_SEARCH_LOCATION: global
+  VERTEX_SEARCH_COLLECTION: default_collection
+  EGRESS_GEMINI_LIVE_MODE: fast
 
 jobs:
   deploy:
@@ -40,27 +59,135 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      - name: Set up Python for Agent Engine deploy
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Agent Engine deploy dependencies
+        run: python -m pip install -e ".[all,dev]" "cloudpickle>=3.0"
+
       - name: Build gateway image
         run: |
           gcloud builds submit --config cloudbuild.gateway.yaml \
             --substitutions=_IMAGE=$REPO_PATH/gateway:${{ github.sha }} .
+
+      - name: Build engine image
+        run: |
+          gcloud builds submit --config cloudbuild.engine.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/engine:${{ github.sha }} .
+
+      - name: Build market-data MCP image
+        run: |
+          gcloud builds submit --config cloudbuild.market-data-mcp.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/market-data-mcp:${{ github.sha }} .
+
+      - name: Build news MCP image
+        run: |
+          gcloud builds submit --config cloudbuild.news-mcp.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/news-mcp:${{ github.sha }} .
+
+      - name: Build positioning MCP image
+        run: |
+          gcloud builds submit --config cloudbuild.positioning-mcp.yaml \
+            --substitutions=_IMAGE=$REPO_PATH/positioning-mcp:${{ github.sha }} .
 
       - name: Build frontend image
         run: |
           gcloud builds submit web --config web/cloudbuild.yaml \
             --substitutions=_IMAGE=$REPO_PATH/frontend:${{ github.sha }},_WS=$GATEWAY_WS,_HTTP=$GATEWAY_URL
 
-      - name: Deploy gateway (keeps existing env / min-instances)
+      - name: Deploy engine service
+        run: |
+          gcloud run deploy egress-engine \
+            --image $REPO_PATH/engine:${{ github.sha }} \
+            --region $REGION \
+            --service-account $ENGINE_SERVICE_ACCOUNT \
+            --vpc-connector $VPC_CONNECTOR \
+            --vpc-egress private-ranges-only \
+            --set-env-vars PROJECT_ID=$PROJECT,GOOGLE_CLOUD_LOCATION=$REGION \
+            --set-secrets REDIS_URL=egress-redis-url:latest,DATABASE_URL=egress-database-url:latest \
+            --no-allow-unauthenticated \
+            --quiet
+
+      - name: Deploy MCP services
+        run: |
+          COMMON_FLAGS="--region $REGION --service-account $MCP_SERVICE_ACCOUNT --vpc-connector $VPC_CONNECTOR --vpc-egress private-ranges-only --allow-unauthenticated --quiet"
+
+          gcloud run deploy egress-market-data-mcp \
+            --image $REPO_PATH/market-data-mcp:${{ github.sha }} \
+            --set-env-vars MCP_TRANSPORT=streamable-http,PROJECT_ID=$PROJECT,GOOGLE_CLOUD_LOCATION=$REGION \
+            --set-secrets ALPHAVANTAGE_API_KEY=egress-alphavantage-api-key:latest,DATABASE_URL=egress-database-url:latest \
+            $COMMON_FLAGS
+
+          gcloud run deploy egress-news-mcp \
+            --image $REPO_PATH/news-mcp:${{ github.sha }} \
+            --set-env-vars MCP_TRANSPORT=streamable-http,PROJECT_ID=$PROJECT,GOOGLE_CLOUD_LOCATION=$REGION \
+            --set-secrets ALPHAVANTAGE_API_KEY=egress-alphavantage-api-key:latest,DATABASE_URL=egress-database-url:latest \
+            $COMMON_FLAGS
+
+          gcloud run deploy egress-positioning-mcp \
+            --image $REPO_PATH/positioning-mcp:${{ github.sha }} \
+            --set-env-vars MCP_TRANSPORT=streamable-http,PROJECT_ID=$PROJECT,GOOGLE_CLOUD_LOCATION=$REGION \
+            --set-secrets DATABASE_URL=egress-database-url:latest \
+            $COMMON_FLAGS
+
+      - name: Deploy or update Agent Engine
+        run: |
+          RESOURCE_NAME=$(GOOGLE_CLOUD_PROJECT=$PROJECT \
+            GOOGLE_CLOUD_LOCATION=$REGION \
+            PROJECT_ID=$PROJECT \
+            EGRESS_AGENT_ENGINE_ID=$AGENT_ENGINE_ID \
+            EGRESS_AGENT_STAGING_BUCKET=$AGENT_STAGING_BUCKET \
+            EGRESS_AGENT_SERVICE_ACCOUNT=$AGENT_SERVICE_ACCOUNT \
+            EGRESS_AGENT_MIN_INSTANCES=0 \
+            EGRESS_AGENT_MAX_INSTANCES=1 \
+            EGRESS_ENGINE_SERVICE_URL=$ENGINE_URL \
+            MARKET_DATA_MCP_URL=$MARKET_DATA_MCP_URL \
+            NEWS_MCP_URL=$NEWS_MCP_URL \
+            POSITIONING_MCP_URL=$POSITIONING_MCP_URL \
+            VERTEX_SEARCH_DATASTORE_ID=$VERTEX_SEARCH_DATASTORE_ID \
+            VERTEX_SEARCH_LOCATION=$VERTEX_SEARCH_LOCATION \
+            VERTEX_SEARCH_COLLECTION=$VERTEX_SEARCH_COLLECTION \
+            python -m agents.deploy_agent_engine --display-name egress-orchestrator | tail -n 1)
+          echo "AGENT_ENGINE_ID=$RESOURCE_NAME" >> "$GITHUB_ENV"
+          echo "Agent Engine: $RESOURCE_NAME"
+
+      - name: Deploy gateway service
         run: |
           gcloud run deploy egress-gateway \
-            --image $REPO_PATH/gateway:${{ github.sha }} --region $REGION --quiet
+            --image $REPO_PATH/gateway:${{ github.sha }} \
+            --region $REGION \
+            --service-account $GATEWAY_SERVICE_ACCOUNT \
+            --vpc-connector $VPC_CONNECTOR \
+            --vpc-egress private-ranges-only \
+            --allow-unauthenticated \
+            --set-env-vars PROJECT_ID=$PROJECT,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_GENAI_USE_VERTEXAI=true,EGRESS_ORCHESTRATOR_MODE=agent_engine,EGRESS_AGENT_ENGINE_ID=$AGENT_ENGINE_ID,EGRESS_ENGINE_SERVICE_URL=$ENGINE_URL,EGRESS_ENGINE_AUTH=google_id_token,MARKET_DATA_MCP_URL=$MARKET_DATA_MCP_URL,NEWS_MCP_URL=$NEWS_MCP_URL,POSITIONING_MCP_URL=$POSITIONING_MCP_URL,VERTEX_SEARCH_DATASTORE_ID=$VERTEX_SEARCH_DATASTORE_ID,VERTEX_SEARCH_LOCATION=$VERTEX_SEARCH_LOCATION,VERTEX_SEARCH_COLLECTION=$VERTEX_SEARCH_COLLECTION,EGRESS_GEMINI_LIVE_MODE=$EGRESS_GEMINI_LIVE_MODE \
+            --set-secrets ALPHAVANTAGE_API_KEY=egress-alphavantage-api-key:latest,DATABASE_URL=egress-database-url:latest,REDIS_URL=egress-redis-url:latest \
+            --quiet
 
-      - name: Deploy frontend (keeps existing env / min-instances)
+      - name: Deploy frontend service
         run: |
           gcloud run deploy egress-frontend \
-            --image $REPO_PATH/frontend:${{ github.sha }} --region $REGION --quiet
+            --image $REPO_PATH/frontend:${{ github.sha }} \
+            --region $REGION \
+            --allow-unauthenticated \
+            --quiet
+
+      - name: Post-deploy smoke checks
+        run: |
+          python scripts/deployed_smoke.py \
+            --frontend-url "$FRONTEND_URL" \
+            --gateway-url "$GATEWAY_URL" \
+            --engine-url "$ENGINE_URL" \
+            --market-data-mcp-url "$MARKET_DATA_MCP_URL" \
+            --news-mcp-url "$NEWS_MCP_URL" \
+            --positioning-mcp-url "$POSITIONING_MCP_URL" \
+            --agent-engine-id "$AGENT_ENGINE_ID"
 
       - name: Report URLs
         run: |
-          echo "gateway:  $(gcloud run services describe egress-gateway  --region $REGION --format='value(status.url)')"
-          echo "frontend: $(gcloud run services describe egress-frontend --region $REGION --format='value(status.url)')"
+          echo "frontend: $FRONTEND_URL"
+          echo "gateway:  $GATEWAY_URL"
+          echo "engine:   $ENGINE_URL"
+          echo "agent:    $AGENT_ENGINE_ID"
