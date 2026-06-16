@@ -20,6 +20,7 @@ dependencies = [
 agents = [
     "google-adk>=0.2",
     "google-cloud-aiplatform[agent-engines]>=1.60",
+    "google-cloud-discoveryengine>=0.13",
     "google-genai>=0.3",
 ]
 # FastAPI gateway / BFF: WebSocket hub + A2A routing.

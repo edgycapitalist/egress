@@ -22,11 +22,60 @@ from agents.agent_engine_app import build_app
 DEFAULT_REQUIREMENTS = [
     "google-adk>=0.2",
     "google-cloud-aiplatform[agent-engines]>=1.60",
+    "google-cloud-discoveryengine>=0.13",
     "google-genai>=0.3",
     "pydantic>=2.7",
     "numpy>=2.0",
     "httpx>=0.27",
+    "cloudpickle>=3.0",
+    "psycopg[binary]>=3.1",
+    "pgvector>=0.2",
+    "redis>=5.0",
 ]
+
+
+def _env_vars() -> dict[str, Any]:
+    from google.cloud.aiplatform_v1.types import env_var
+
+    project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID") or ""
+    location = (
+        os.getenv("GOOGLE_CLOUD_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_REGION")
+        or "us-central1"
+    )
+    values: dict[str, Any] = {
+        "PROJECT_ID": project,
+        "GOOGLE_CLOUD_LOCATION": location,
+        "GOOGLE_GENAI_USE_VERTEXAI": os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "true"),
+        "EGRESS_GEMINI_LIVE_MODE": os.getenv("EGRESS_GEMINI_LIVE_MODE", "fast"),
+        "VERTEX_SEARCH_DATASTORE_ID": os.getenv(
+            "VERTEX_SEARCH_DATASTORE_ID", "egress-crisis-corpus"
+        ),
+        "VERTEX_SEARCH_LOCATION": os.getenv("VERTEX_SEARCH_LOCATION", "global"),
+        "VERTEX_SEARCH_COLLECTION": os.getenv(
+            "VERTEX_SEARCH_COLLECTION", "default_collection"
+        ),
+    }
+    for key in (
+        "EGRESS_ENGINE_SERVICE_URL",
+        "MARKET_DATA_MCP_URL",
+        "NEWS_MCP_URL",
+        "POSITIONING_MCP_URL",
+        "VERTEX_MEMORY_BANK_ID",
+    ):
+        if os.getenv(key):
+            values[key] = os.environ[key]
+    secret_env = {
+        "ALPHAVANTAGE_API_KEY": os.getenv(
+            "EGRESS_ALPHAVANTAGE_SECRET", "egress-alphavantage-api-key"
+        ),
+        "DATABASE_URL": os.getenv("EGRESS_DATABASE_URL_SECRET", "egress-database-url"),
+        "REDIS_URL": os.getenv("EGRESS_REDIS_URL_SECRET", "egress-redis-url"),
+    }
+    for key, secret in secret_env.items():
+        if secret:
+            values[key] = env_var.SecretRef(secret=secret, version="latest")
+    return values
 
 
 def _agent_engine_module() -> Any:
@@ -39,7 +88,12 @@ def _agent_engine_module() -> Any:
     raise RuntimeError("No Agent Engine SDK module available: " + "; ".join(errors))
 
 
-def deploy(display_name: str, *, staging_bucket: str | None = None) -> Any:
+def deploy(
+    display_name: str,
+    *,
+    staging_bucket: str | None = None,
+    service_account: str | None = None,
+) -> Any:
     import vertexai
 
     project = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID")
@@ -55,6 +109,10 @@ def deploy(display_name: str, *, staging_bucket: str | None = None) -> Any:
         display_name=display_name,
         requirements=DEFAULT_REQUIREMENTS,
         extra_packages=["agents", "engine", "mcp", "memory", "rag"],
+        env_vars=_env_vars(),
+        service_account=service_account or os.getenv("EGRESS_AGENT_SERVICE_ACCOUNT"),
+        min_instances=int(os.getenv("EGRESS_AGENT_MIN_INSTANCES", "0")),
+        max_instances=int(os.getenv("EGRESS_AGENT_MAX_INSTANCES", "1")),
     )
 
 
@@ -62,6 +120,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--display-name", default="egress-orchestrator")
     parser.add_argument("--staging-bucket", default=os.getenv("EGRESS_AGENT_STAGING_BUCKET"))
+    parser.add_argument("--service-account", default=os.getenv("EGRESS_AGENT_SERVICE_ACCOUNT"))
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -74,10 +133,19 @@ def main() -> None:
                 "display_name": args.display_name,
                 "requirements": DEFAULT_REQUIREMENTS,
                 "extra_packages": ["agents", "engine", "mcp", "memory", "rag"],
+                "env_vars": {
+                    key: ("<secret-ref>" if value.__class__.__name__ == "SecretRef" else value)
+                    for key, value in _env_vars().items()
+                },
+                "service_account": args.service_account,
             }
         )
         return
-    resource = deploy(args.display_name, staging_bucket=args.staging_bucket)
+    resource = deploy(
+        args.display_name,
+        staging_bucket=args.staging_bucket,
+        service_account=args.service_account,
+    )
     print(resource)
 
 

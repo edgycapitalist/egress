@@ -97,7 +97,7 @@ class VertexSearchRetriever:
         self.datastore_id = datastore_id
         self.location = location
         self.collection = collection
-        self.project = project or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+        self.project = project or os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID", "")
 
     def retrieve(self, query: str, *, limit: int = 4) -> list[CorpusSnippet]:
         try:

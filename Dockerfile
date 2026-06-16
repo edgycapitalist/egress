@@ -37,7 +37,7 @@ CMD ["python", "mcp/market_data/server.py"]
 # ---- News MCP server — Phase 2 ----
 FROM base AS news_mcp
 COPY mcp/ ./mcp/
-RUN pip install ".[mcp]"
+RUN pip install ".[mcp,data]"
 EXPOSE 8102
 CMD ["python", "mcp/news/server.py"]
 
@@ -65,7 +65,7 @@ COPY docs/replays/ ./docs/replays/
 # gateway + agents (ADK / google-genai) so the deployed service can run the live
 # Gemini pipeline as well as cached replay. Gemini is reached only via Vertex AI
 # using the Cloud Run service account's ADC (no API key).
-RUN pip install ".[gateway,agents]"
+RUN pip install ".[gateway,agents,data]"
 EXPOSE 8080
 # Respect Cloud Run's injected $PORT (defaults to 8080 locally).
 CMD ["sh", "-c", "uvicorn gateway.app:app --host 0.0.0.0 --port ${PORT:-8080}"]

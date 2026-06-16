@@ -17,8 +17,9 @@ from engine.schema import RunConfig
 class EgressAgentEngineApp:
     """Serializable facade for Vertex AI Agent Engine / Reasoning Engine."""
 
-    def query(self, input: dict[str, Any]) -> dict[str, Any]:  # noqa: A002 - SDK uses input
-        return asyncio.run(self.run(input))
+    def query(self, **kwargs: Any) -> dict[str, Any]:
+        payload = kwargs.get("input") if isinstance(kwargs.get("input"), dict) else kwargs
+        return asyncio.run(self.run(payload))
 
     async def run(self, payload: dict[str, Any]) -> dict[str, Any]:
         from agents.orchestrator.driver import (

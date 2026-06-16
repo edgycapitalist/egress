@@ -98,8 +98,30 @@ async def _engine_service_request(
     if not base:
         raise RuntimeError("EGRESS_ENGINE_SERVICE_URL is not configured")
     timeout = float(os.getenv("EGRESS_ENGINE_TIMEOUT_SECONDS", "60"))
+    headers: dict[str, str] = {}
+    if os.getenv("EGRESS_ENGINE_AUTH", "google_id_token").strip().lower() in {
+        "google_id_token",
+        "id_token",
+        "cloud_run",
+    }:
+        try:
+            import google.auth.transport.requests
+            import google.oauth2.id_token
+        except ImportError as exc:  # pragma: no cover - cloud image has google auth
+            raise RuntimeError("google-auth is required for authenticated engine calls") from exc
+        audience = os.getenv("EGRESS_ENGINE_AUDIENCE", base.rstrip("/"))
+        token = google.oauth2.id_token.fetch_id_token(
+            google.auth.transport.requests.Request(),
+            audience,
+        )
+        headers["Authorization"] = f"Bearer {token}"
     async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.request(method, f"{base.rstrip('/')}{path}", json=json_body)
+        response = await client.request(
+            method,
+            f"{base.rstrip('/')}{path}",
+            json=json_body,
+            headers=headers,
+        )
     response.raise_for_status()
     return response.json()
 
