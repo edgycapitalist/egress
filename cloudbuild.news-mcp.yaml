@@ -1,0 +1,10 @@
+# Build only the news MCP service stage.
+#   gcloud builds submit --config cloudbuild.news-mcp.yaml --substitutions=_IMAGE=...
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_IMAGE}', '--target', 'news_mcp', '.']
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY

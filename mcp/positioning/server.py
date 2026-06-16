@@ -4,6 +4,7 @@ Run it as a path script to avoid the repo package named ``mcp`` shadowing the
 PyPI MCP SDK::
 
     python mcp/positioning/server.py
+    MCP_TRANSPORT=streamable-http PORT=8080 python mcp/positioning/server.py
 """
 
 from __future__ import annotations
@@ -25,7 +26,12 @@ def build_server():
     """Construct the FastMCP server. Imports the SDK lazily."""
     from mcp.server.fastmcp import FastMCP
 
-    server = FastMCP("egress-positioning")
+    kwargs = _server_kwargs()
+    try:
+        server = FastMCP("egress-positioning", **kwargs)
+    except TypeError:
+        server = FastMCP("egress-positioning")
+        _apply_settings(server, **kwargs)
     server.tool()(get_sec_holder_snapshot)
     server.tool()(get_public_positioning_summary)
     server.tool()(get_peer_crowding_evidence)
@@ -33,8 +39,25 @@ def build_server():
     return server
 
 
+def _server_kwargs() -> dict[str, int | str]:
+    return {
+        "host": os.getenv("MCP_HOST", "0.0.0.0"),
+        "port": int(os.getenv("PORT") or os.getenv("MCP_PORT") or "8080"),
+    }
+
+
+def _apply_settings(server, *, host: str, port: int) -> None:
+    settings = getattr(server, "settings", None)
+    if settings is None:
+        return
+    for key, value in {"host": host, "port": port}.items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+
+
 def main() -> None:
-    build_server().run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    build_server().run(transport=transport)
 
 
 if __name__ == "__main__":

@@ -88,11 +88,37 @@ def _agent_engine_module() -> Any:
     raise RuntimeError("No Agent Engine SDK module available: " + "; ".join(errors))
 
 
+def _resource_name(resource: Any) -> str:
+    for attr in ("resource_name", "name"):
+        value = getattr(resource, attr, None)
+        if value:
+            return str(value)
+    raw = str(resource)
+    marker = "projects/"
+    if marker in raw:
+        return raw[raw.index(marker) :].split()[0].strip("',)")
+    return raw
+
+
+def _package_kwargs(display_name: str, service_account: str | None) -> dict[str, Any]:
+    return {
+        "agent_engine": build_app(),
+        "display_name": display_name,
+        "requirements": DEFAULT_REQUIREMENTS,
+        "extra_packages": ["agents", "engine", "mcp", "memory", "rag"],
+        "env_vars": _env_vars(),
+        "service_account": service_account or os.getenv("EGRESS_AGENT_SERVICE_ACCOUNT"),
+        "min_instances": int(os.getenv("EGRESS_AGENT_MIN_INSTANCES", "0")),
+        "max_instances": int(os.getenv("EGRESS_AGENT_MAX_INSTANCES", "1")),
+    }
+
+
 def deploy(
     display_name: str,
     *,
     staging_bucket: str | None = None,
     service_account: str | None = None,
+    resource_name: str | None = None,
 ) -> Any:
     import vertexai
 
@@ -104,16 +130,10 @@ def deploy(
     )
     vertexai.init(project=project, location=location, staging_bucket=staging_bucket)
     agent_engines = _agent_engine_module()
-    return agent_engines.create(
-        build_app(),
-        display_name=display_name,
-        requirements=DEFAULT_REQUIREMENTS,
-        extra_packages=["agents", "engine", "mcp", "memory", "rag"],
-        env_vars=_env_vars(),
-        service_account=service_account or os.getenv("EGRESS_AGENT_SERVICE_ACCOUNT"),
-        min_instances=int(os.getenv("EGRESS_AGENT_MIN_INSTANCES", "0")),
-        max_instances=int(os.getenv("EGRESS_AGENT_MAX_INSTANCES", "1")),
-    )
+    package_kwargs = _package_kwargs(display_name, service_account)
+    if resource_name:
+        return agent_engines.update(resource_name, **package_kwargs)
+    return agent_engines.create(**package_kwargs)
 
 
 def main() -> None:
@@ -121,6 +141,11 @@ def main() -> None:
     parser.add_argument("--display-name", default="egress-orchestrator")
     parser.add_argument("--staging-bucket", default=os.getenv("EGRESS_AGENT_STAGING_BUCKET"))
     parser.add_argument("--service-account", default=os.getenv("EGRESS_AGENT_SERVICE_ACCOUNT"))
+    parser.add_argument(
+        "--resource-name",
+        default=os.getenv("EGRESS_AGENT_ENGINE_ID"),
+        help="Existing Agent Engine resource to update; omitted creates a new resource.",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -138,6 +163,7 @@ def main() -> None:
                     for key, value in _env_vars().items()
                 },
                 "service_account": args.service_account,
+                "resource_name": args.resource_name,
             }
         )
         return
@@ -145,8 +171,9 @@ def main() -> None:
         args.display_name,
         staging_bucket=args.staging_bucket,
         service_account=args.service_account,
+        resource_name=args.resource_name,
     )
-    print(resource)
+    print(_resource_name(resource))
 
 
 if __name__ == "__main__":

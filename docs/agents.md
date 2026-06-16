@@ -102,6 +102,9 @@ signatures two ways:
   No running server, no cloud, fully offline and unit-tested (`tools.py` wraps the
   backend in `data.py`).
 - **FastMCP servers** (`server.py`) — the deployment surface, run as a path script.
+  They default to stdio for local MCP clients. In Cloud Run set
+  `MCP_TRANSPORT=streamable-http`; the server binds to `PORT` and exposes the
+  streamable HTTP MCP endpoint used by ADK's deployed MCP toolset.
 
 ### Data backends — free/real feed with synthetic fallback
 
@@ -137,6 +140,11 @@ the offline suite is unaffected. The FastMCP servers import the SDK lazily and a
 run **as path scripts** (`python mcp/market_data/server.py`) so that `import mcp`
 resolves to the installed SDK rather than this repo's package; in a container the
 server code is the only `mcp` on the path, so the question does not arise.
+
+Cloud Run MCP services are intentionally configured with `--allow-unauthenticated`
+in the deploy workflow because the ADK MCP URL helper expects a normal
+streamable-HTTP endpoint and does not attach Cloud Run ID tokens. They expose only
+the MCP tools; API keys remain in Secret Manager and are not returned by tools.
 
 ## Authentication
 

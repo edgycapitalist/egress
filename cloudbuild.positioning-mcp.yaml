@@ -1,0 +1,10 @@
+# Build only the positioning MCP service stage.
+#   gcloud builds submit --config cloudbuild.positioning-mcp.yaml --substitutions=_IMAGE=...
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_IMAGE}', '--target', 'positioning_mcp', '.']
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY

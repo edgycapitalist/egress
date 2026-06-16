@@ -1,0 +1,10 @@
+# Build only the deterministic engine service stage.
+#   gcloud builds submit --config cloudbuild.engine.yaml --substitutions=_IMAGE=...
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    env: ['DOCKER_BUILDKIT=1']
+    args: ['build', '-t', '${_IMAGE}', '--target', 'engine', '.']
+images:
+  - '${_IMAGE}'
+options:
+  logging: CLOUD_LOGGING_ONLY
