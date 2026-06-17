@@ -46,8 +46,12 @@ _MEMO: dict[str, dict] = {}  # process-lifetime cache: one real call per key per
 # below is shared across both via Postgres). The free tier is ~25 calls/day.
 AV_DAILY_LIMIT = int(os.environ.get("ALPHAVANTAGE_DAILY_LIMIT", "25"))
 AV_MAX_CALLS_PER_RUN = int(os.environ.get("ALPHAVANTAGE_MAX_CALLS_PER_RUN", "6"))
+AV_PROVIDER_COOLDOWN_SECONDS = float(
+    os.environ.get("ALPHAVANTAGE_PROVIDER_COOLDOWN_SECONDS", "10")
+)
 _PROC_REAL_CALLS = 0  # real calls made by this process (per-run cap + no-DB proxy)
-_RATE_LIMITED = False  # set once AV signals its limit, to stop hammering it
+_RATE_LIMITED = False  # set only when our own shared daily budget is exhausted
+_PROVIDER_RESTRICTED_UNTIL = 0.0  # short cooldown after Alpha Vantage envelopes
 
 
 def _api_key() -> str | None:
@@ -75,8 +79,11 @@ def _real_call(params: dict, label: str) -> dict | None:
     Vantage's own rate-limit envelope, and never raises — so the caller always has
     a clean synthetic fallback.
     """
-    global _PROC_REAL_CALLS, _RATE_LIMITED, _LAST_REAL_TS
+    global _PROC_REAL_CALLS, _RATE_LIMITED, _LAST_REAL_TS, _PROVIDER_RESTRICTED_UNTIL
     if not _api_key() or _RATE_LIMITED:
+        return None
+    now = time.monotonic()
+    if _PROVIDER_RESTRICTED_UNTIL and now < _PROVIDER_RESTRICTED_UNTIL:
         return None
     if _PROC_REAL_CALLS >= AV_MAX_CALLS_PER_RUN:
         _log.warning(
@@ -103,13 +110,14 @@ def _real_call(params: dict, label: str) -> dict | None:
         return None
     if "Note" in payload or "Information" in payload:  # AV's own limit/restriction envelope
         msg = str(payload.get("Information") or payload.get("Note") or "")
-        if "per day" in msg.lower() or "25 requests" in msg.lower():
-            _RATE_LIMITED = True  # daily quota exhausted — stop trying for this process
-            _log.warning("Alpha Vantage daily limit reached — synthetic for %s. Message: %s",
-                         label, msg)
-        else:  # transient (per-second burst) or a premium-only parameter — don't latch
-            _log.warning("Alpha Vantage restricted this request for %s — synthetic. Message: %s",
-                         label, msg)
+        _PROVIDER_RESTRICTED_UNTIL = time.monotonic() + AV_PROVIDER_COOLDOWN_SECONDS
+        _log.warning(
+            "Alpha Vantage restricted this request for %s — synthetic; cooling down %.0fs. "
+            "Message: %s",
+            label,
+            AV_PROVIDER_COOLDOWN_SECONDS,
+            msg,
+        )
         return None
     if "Error Message" in payload:
         _log.warning("Alpha Vantage error for %s: %s — synthetic", label, payload["Error Message"])
