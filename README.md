@@ -8,9 +8,15 @@ Egress simulates how an investment position would behave in a crisis sell-off, b
 
 **<https://egress-frontend-978090004115.us-central1.run.app>**
 
-Cached mode replays a **recorded** CVNA cascade instantly — no keys, no cloud. A live run re-runs the deterministic ensemble; ticking *Use real Gemini (Vertex AI)* now uses Gemini once up front to build scenario assumptions, then runs the deterministic low/base/high ensemble with timeout fallback.
+Cached mode replays a **recorded** CVNA cascade instantly, with no market-data or
+Gemini calls. A live run re-runs the deterministic ensemble; ticking *Use real
+Gemini (Vertex AI)* uses Gemini once up front to build scenario assumptions, then
+runs the deterministic low/base/high ensemble with timeout fallback.
 
-> The hosted URL runs the deployed build. The instrument picker and the live Alpha Vantage path described below are on the `dev` branch and run locally.
+> The hosted URL runs the current deployed build. The instrument picker, live
+> Alpha Vantage daily-data path, Agent Engine route, and deployed Cloud Run
+> services are active there; free-tier provider throttling can still cause a
+> clearly labelled synthetic fallback for a given check.
 
 ## Demo video
 
@@ -28,8 +34,8 @@ Egress lets you stress-test it. You describe a position and a stress event in pl
 
 The defining design choice is that the language model is one part of the system, not the engine. Egress runs in three tiers:
 
-1. **Gemini archetype agents set the stances.** Six Gemini `LlmAgent`s (via Vertex AI), one per investor type, run as an ADK `ParallelAgent`. Each reads the scenario and writes only its own `*_stance` key into session state, setting the behavioural mood for its investor type. These refresh once per window, never inside the per-tick loop.
-2. **A deterministic NumPy population acts on those stances.** Thousands of lightweight agents live as rows in NumPy arrays, parameterised by their type's current stance. Staggered per-agent thresholds decide who sells and when, which is what produces a cascade rather than a single synchronised dump.
+1. **Gemini/ADK sets assumptions, not mechanics.** In the default deployed live path, a Gemini Scenario Author runs once through Vertex AI / Agent Engine to build the scenario assumptions and crowd read, then Egress runs the deterministic low/base/high ensemble. The slower detailed path can still run six Gemini `LlmAgent`s as an ADK `ParallelAgent`, one per investor type, to refresh archetype stances once per window. No Gemini call sits inside the per-agent or per-tick loop.
+2. **A deterministic NumPy population acts on those assumptions.** Thousands of lightweight agents live as rows in NumPy arrays, parameterised by the scenario, peer-crowding profile, and the active stance set. Staggered per-agent thresholds decide who sells and when, which is what produces a cascade rather than a single synchronised dump.
 3. **An order-book engine matches the orders.** A stylized price-time-priority limit order book (`engine/orderbook/book.py`) matches each tick: a sell sweeps the highest resting bids first and fills at the bid price until the order is exhausted. Resting orders persist across ticks, age, cancel as they go stale, and replenish more slowly as stress rises. Fill rate, slippage, stuck percentage and drawdown are computed from the **matched quantities and traded prices** — not a price-impact formula — and a single-stock volatility halt is a fixed band rule. Each run is recorded to an NDJSON replay stream. Honest caveat: this is still a simulated book built from agents, not observed Level 2 depth; the price is the last traded level **plus an exogenous shock gap** the scenario applies at scheduled ticks.
 
 The app reports **impact estimates**, not exact causal attribution. Every run
@@ -50,13 +56,21 @@ what caused a real market move.
 
 ![Egress run flow](./docs/egress-run-flow.svg)
 
-The diagrams show the full target architecture. On the dev branch, the platform
-hooks now exist for a deterministic engine service, Agent Engine routing, agent
-discovery cards, long-term memory interfaces, RAG retrieval, Redis-backed run
-state, and deployed MCP URLs. The currently deployed main revision may still be
-behind those hooks until the Phase 7 cloud resources and CI/CD promotion are
-completed. The local default remains in-process ADK orchestration so development
-and tests run offline.
+The diagrams show the current deployed main path plus the explicitly labelled
+fallbacks and platform hooks. The hosted build uses Cloud Run for the frontend,
+gateway, deterministic engine service, and MCP services; the gateway routes live
+Gemini runs through the deployed Agent Engine resource and falls back
+deterministically when the remote path is unavailable. Agent cards provide
+A2A-style discovery metadata, but full A2A transport is not required for Track 1
+and is not the critical runtime dependency.
+
+Redis is used by the deployed engine/run-state path, while the gateway streams
+WebSocket frames directly to the browser. RAG retrieval has a local corpus path
+and a Vertex AI Search adapter used when the deployed datastore is configured.
+Long-term memory has JSONL and Cloud SQL/Postgres backends today; the
+Vertex Memory Bank boundary exists, but the actual Memory Bank resource remains
+a platform follow-up until its API surface is verified. The local default remains
+in-process ADK orchestration so development and tests run offline.
 
 ### Calibration against a real episode
 
@@ -146,13 +160,13 @@ To run the app's **live** toggle against Gemini, start the gateway with `EGRESS_
 | External data | Three MCP servers over the Model Context Protocol — Alpha Vantage **daily bars** (market data), Alpha Vantage **news headlines**, and free **positioning evidence** (user CSV, opt-in SEC EDGAR, curated fixtures, synthetic fallback). Daily only; no intraday or order-book/Level 2 feed. |
 | Gateway / BFF | FastAPI, WebSocket streaming of tick telemetry. |
 | Frontend | Next.js 15, React 19, shadcn/ui, Tailwind CSS. |
-| Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data; Redis is the deployed-mode run-state/fanout backend, with an in-memory local fallback for tests. |
+| Local data layer | Postgres and Redis via docker-compose. Postgres backs an optional cache for fetched market data and the memory fallback; Redis backs deployed engine run state, with an in-memory local fallback for tests. |
 
 See [`AGENTS.md`](./AGENTS.md) for the full build specification and [`docs/contracts.md`](./docs/contracts.md) for the engine and agents boundary.
 
 ## Data sources
 
-The market-data MCP server calls one Alpha Vantage endpoint — `TIME_SERIES_DAILY` with `outputsize=compact` — when `ALPHAVANTAGE_API_KEY` is set. From those daily bars it derives three real numbers: the **reference price**, the **average daily volume** (mean of recent volume), and the **daily realized volatility** (standard deviation of daily returns). Real calls are budgeted for the free tier — at most a few per run and `25`/day by default, throttled, with an immediate synthetic fallback when a limit is hit — so a run never exhausts the quota.
+The market-data MCP server calls one Alpha Vantage endpoint — `TIME_SERIES_DAILY` with `outputsize=compact` — when `ALPHAVANTAGE_API_KEY` is set. From those daily bars it derives three real numbers: the **reference price**, the **average daily volume** (mean of recent volume), and the **daily realized volatility** (standard deviation of daily returns). Real calls are budgeted for the free tier — at most a few per run and `25`/day by default, throttled, with a short provider cooldown and immediate synthetic fallback when a limit is hit — so a temporary provider/account throttle does not poison the warm process for every later ticker.
 
 The positioning MCP server adds free peer-crowding inputs. It uses this precedence:
 **user-uploaded holdings CSV** first, then opt-in **SEC EDGAR** public JSON lookups
