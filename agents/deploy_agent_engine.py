@@ -57,11 +57,13 @@ def _env_vars() -> dict[str, Any]:
         ),
     }
     for key in (
+        "EGRESS_AGENT_ENGINE_ID",
+        "EGRESS_MEMORY_AGENT_ENGINE_ID",
+        "EGRESS_MEMORY_APP_NAME",
         "EGRESS_ENGINE_SERVICE_URL",
         "MARKET_DATA_MCP_URL",
         "NEWS_MCP_URL",
         "POSITIONING_MCP_URL",
-        "VERTEX_MEMORY_BANK_ID",
     ):
         if os.getenv(key):
             values[key] = os.environ[key]

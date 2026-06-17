@@ -8,8 +8,11 @@ Cloud SQL/Postgres when ``DATABASE_URL`` is configured.
 
 from __future__ import annotations
 
+import asyncio
+import datetime
 import json
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -253,40 +256,247 @@ class PostgresMemoryStore:
         return {"backend": self.name, "ok": True}
 
 
-class VertexMemoryBankStore(JsonlMemoryStore):
-    """ADK MemoryService / Vertex Memory Bank adapter with local-safe fallback.
+def _run_async_blocking(coro):
+    """Run an ADK async memory call from sync or async callers.
 
-    The exact ADK Memory Bank client surface is project/SDK-version dependent. This
-    adapter keeps the product code on the right boundary now: when the Memory Bank
-    id is configured it records that deployed backend intent and can be replaced by
-    the concrete SDK calls during cloud bootstrap without changing callers.
+    The existing product memory facade is synchronous, but the ADK MemoryService
+    implementations are async. When already inside an event loop, run the coroutine
+    on a short-lived thread with its own loop instead of nesting ``asyncio.run``.
     """
 
-    name = "vertex_memory_bank"
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+
+    def runner() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:  # pragma: no cover - re-raised in caller thread
+            result["error"] = exc
+
+    thread = threading.Thread(target=runner, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
+
+
+def _agent_engine_memory_id(raw: str) -> str:
+    value = raw.strip()
+    if "/" in value:
+        return value.rstrip("/").split("/")[-1]
+    return value
+
+
+def _record_text(kind: str, payload: dict[str, Any]) -> str:
+    return json.dumps({"kind": kind, "payload": payload}, sort_keys=True)
+
+
+def _entry_texts(entry: Any) -> list[str]:
+    content = getattr(entry, "content", None)
+    parts = getattr(content, "parts", None) or []
+    texts: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if text:
+            texts.append(str(text))
+    return texts
+
+
+def _parse_memory_payload(text: str, expected_kind: str) -> dict[str, Any] | None:
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if raw.get("kind") != expected_kind or not isinstance(raw.get("payload"), dict):
+        return None
+    return raw["payload"]
+
+
+class VertexMemoryBankStore:
+    """Real ADK MemoryService backend using Vertex AI Memory Bank.
+
+    ADK exposes Memory Bank through ``VertexAiMemoryBankService`` scoped to an
+    Agent Engine resource id. Egress writes explicit scenario/calibration facts
+    with structured JSON payloads, then searches the same memory service for
+    comparable prior runs.
+    """
+
+    name = "vertex_ai_memory_bank"
 
     def __init__(
         self,
-        memory_bank_id: str,
-        fallback_path: str | Path = "runs/memory.jsonl",
+        *,
+        agent_engine_id: str,
+        project: str | None = None,
+        location: str | None = None,
+        app_name: str = "egress",
     ) -> None:
-        super().__init__(fallback_path)
-        self.memory_bank_id = memory_bank_id
+        from google.adk.memory.vertex_ai_memory_bank_service import (
+            VertexAiMemoryBankService,
+        )
+        from google.genai import types
+
+        self.agent_engine_id = _agent_engine_memory_id(agent_engine_id)
+        self.project = project
+        self.location = location
+        self.app_name = app_name
+        self._types = types
+        self._service = VertexAiMemoryBankService(
+            project=project,
+            location=location,
+            agent_engine_id=self.agent_engine_id,
+        )
+
+    def _memory_entry(
+        self,
+        *,
+        kind: str,
+        payload: dict[str, Any],
+        record_id: str,
+        symbol: str,
+    ):
+        from google.adk.memory.memory_entry import MemoryEntry
+
+        created_at = float(payload.get("created_at") or time.time())
+        timestamp = datetime.datetime.fromtimestamp(
+            created_at, tz=datetime.UTC
+        ).isoformat()
+        return MemoryEntry(
+            id=record_id,
+            author="egress",
+            timestamp=timestamp,
+            content=self._types.Content(
+                role="user",
+                parts=[self._types.Part(text=_record_text(kind, payload))],
+            ),
+            custom_metadata={
+                "kind": kind,
+                "symbol": symbol.upper(),
+                "run_id": record_id,
+            },
+        )
+
+    def write_run_outcome(self, record: ScenarioHistoryRecord) -> None:
+        _run_async_blocking(
+            self._service.add_memory(
+                app_name=self.app_name,
+                user_id=record.user_id,
+                memories=[
+                    self._memory_entry(
+                        kind="scenario",
+                        payload=record.model_dump(),
+                        record_id=record.run_id,
+                        symbol=record.symbol,
+                    )
+                ],
+                custom_metadata={
+                    "kind": "scenario",
+                    "symbol": record.symbol.upper(),
+                    "run_id": record.run_id,
+                },
+            )
+        )
+
+    def read_recent_scenarios(
+        self, *, user_id: str = "local", symbol: str | None = None, limit: int = 5
+    ) -> list[ScenarioHistoryRecord]:
+        query = "Egress scenario history"
+        if symbol:
+            query += f" for {symbol.upper()}"
+        response = _run_async_blocking(
+            self._service.search_memory(
+                app_name=self.app_name,
+                user_id=user_id,
+                query=query,
+            )
+        )
+        rows: list[ScenarioHistoryRecord] = []
+        for entry in response.memories:
+            for text in _entry_texts(entry):
+                payload = _parse_memory_payload(text, "scenario")
+                if payload is None:
+                    continue
+                record = ScenarioHistoryRecord.model_validate(payload)
+                if symbol is None or record.symbol.upper() == symbol.upper():
+                    rows.append(record)
+        return sorted(rows, key=lambda row: row.created_at, reverse=True)[:limit]
+
+    def write_calibration_adjustment(self, record: CalibrationMemoryRecord) -> None:
+        _run_async_blocking(
+            self._service.add_memory(
+                app_name=self.app_name,
+                user_id="calibration",
+                memories=[
+                    self._memory_entry(
+                        kind="calibration",
+                        payload=record.model_dump(),
+                        record_id=record.run_id,
+                        symbol=record.symbol,
+                    )
+                ],
+                custom_metadata={
+                    "kind": "calibration",
+                    "symbol": record.symbol.upper(),
+                    "run_id": record.run_id,
+                },
+            )
+        )
+
+    def read_calibration_adjustments(
+        self, *, symbol: str | None = None, limit: int = 5
+    ) -> list[CalibrationMemoryRecord]:
+        query = "Egress calibration adjustments"
+        if symbol:
+            query += f" for {symbol.upper()}"
+        response = _run_async_blocking(
+            self._service.search_memory(
+                app_name=self.app_name,
+                user_id="calibration",
+                query=query,
+            )
+        )
+        rows: list[CalibrationMemoryRecord] = []
+        for entry in response.memories:
+            for text in _entry_texts(entry):
+                payload = _parse_memory_payload(text, "calibration")
+                if payload is None:
+                    continue
+                record = CalibrationMemoryRecord.model_validate(payload)
+                if symbol is None or record.symbol.upper() == symbol.upper():
+                    rows.append(record)
+        return sorted(rows, key=lambda row: row.created_at, reverse=True)[:limit]
 
     def health(self) -> dict[str, Any]:
         return {
             "backend": self.name,
             "ok": True,
-            "memory_bank_id": self.memory_bank_id,
-            "fallback": str(self.path),
+            "agent_engine_id": self.agent_engine_id,
+            "project": self.project,
+            "location": self.location,
         }
 
 
 def build_memory_store() -> MemoryStore:
-    memory_bank_id = os.getenv("VERTEX_MEMORY_BANK_ID", "").strip()
-    if memory_bank_id:
+    memory_agent_engine_id = (
+        os.getenv("EGRESS_MEMORY_AGENT_ENGINE_ID")
+        or os.getenv("EGRESS_AGENT_ENGINE_ID")
+        or ""
+    ).strip()
+    if memory_agent_engine_id:
         return VertexMemoryBankStore(
-            memory_bank_id,
-            os.getenv("EGRESS_MEMORY_JSONL", "runs/memory.jsonl"),
+            agent_engine_id=memory_agent_engine_id,
+            project=os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID") or None,
+            location=(
+                os.getenv("GOOGLE_CLOUD_LOCATION")
+                or os.getenv("GOOGLE_CLOUD_REGION")
+                or None
+            ),
+            app_name=os.getenv("EGRESS_MEMORY_APP_NAME", "egress"),
         )
     database_url = os.getenv("DATABASE_URL", "").strip()
     if database_url:

@@ -21,7 +21,8 @@ Key env vars:
 - `POSITIONING_MCP_URL`
 - `VERTEX_SEARCH_DATASTORE_ID`
 - `VERTEX_SEARCH_LOCATION`
-- `VERTEX_MEMORY_BANK_ID`
+- `EGRESS_MEMORY_AGENT_ENGINE_ID`
+- `EGRESS_MEMORY_APP_NAME`
 - `DATABASE_URL`
 
 Local smoke commands:
@@ -123,11 +124,12 @@ a separate manual/platform operation and owns:
 - Memorystore Redis and Serverless VPC connector
 - Vertex AI Search datastore and corpus import
 - Agent Engine staging bucket
-- optional Memory Bank resource when its API surface is verified
+- ADK Vertex AI Memory Bank, scoped to the deployed Agent Engine id
 
-The current deployed project uses Cloud SQL/pgvector as the deployed memory
-fallback. Vertex AI Memory Bank remains a platform follow-up until its creation
-API is verified.
+The current code uses ADK's `VertexAiMemoryBankService` when
+`EGRESS_MEMORY_AGENT_ENGINE_ID` or `EGRESS_AGENT_ENGINE_ID` is configured. Local
+and safe-mode paths fall back to JSONL or Cloud SQL/Postgres through the same
+memory facade.
 
 ## Rollback
 

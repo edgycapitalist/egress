@@ -7,6 +7,8 @@ from agents.cards import discovery_payload
 from engine.scenarios import flagship_scenario
 from memory import (
     JsonlMemoryStore,
+    VertexMemoryBankStore,
+    build_memory_store,
     memory_context_for,
     write_calibration_adjustment,
     write_run_outcome,
@@ -39,6 +41,80 @@ def test_jsonl_memory_store_reads_recent_scenarios_and_calibration(tmp_path: Pat
     assert context["backend"] == "jsonl"
     assert context["recent_scenarios"][0]["analysis"] == "prior run"
     assert context["calibration_adjustments"][0]["episode_id"] == "cvna_2022"
+
+
+@pytest.mark.asyncio
+async def test_vertex_memory_bank_store_uses_adk_memory_service(monkeypatch) -> None:
+    from google.adk.memory import vertex_ai_memory_bank_service
+    from google.adk.memory.base_memory_service import SearchMemoryResponse
+
+    class FakeVertexMemoryService:
+        memories = []
+        init_args = {}
+
+        def __init__(self, project=None, location=None, agent_engine_id=None):
+            self.init_args.update(
+                {
+                    "project": project,
+                    "location": location,
+                    "agent_engine_id": agent_engine_id,
+                }
+            )
+
+        async def add_memory(self, *, app_name, user_id, memories, custom_metadata=None):
+            self.memories.extend(memories)
+
+        async def search_memory(self, *, app_name, user_id, query):
+            return SearchMemoryResponse(memories=list(self.memories))
+
+    monkeypatch.setattr(
+        vertex_ai_memory_bank_service,
+        "VertexAiMemoryBankService",
+        FakeVertexMemoryService,
+    )
+
+    store = VertexMemoryBankStore(
+        agent_engine_id="projects/123/locations/us-central1/reasoningEngines/456",
+        project="test-project",
+        location="us-central1",
+    )
+    scenario = flagship_scenario().model_dump()
+    metrics = {"run_id": scenario["run_id"], "fill_rate": 0.4}
+
+    write_run_outcome(scenario, metrics, analysis="memory bank run", store=store)
+    context = memory_context_for(scenario, store=store)
+
+    assert store.health()["backend"] == "vertex_ai_memory_bank"
+    assert FakeVertexMemoryService.init_args == {
+        "project": "test-project",
+        "location": "us-central1",
+        "agent_engine_id": "456",
+    }
+    assert context["backend"] == "vertex_ai_memory_bank"
+    assert context["recent_scenarios"][0]["analysis"] == "memory bank run"
+
+
+def test_build_memory_store_prefers_agent_engine_memory(monkeypatch) -> None:
+    from google.adk.memory import vertex_ai_memory_bank_service
+
+    class FakeVertexMemoryService:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(
+        vertex_ai_memory_bank_service,
+        "VertexAiMemoryBankService",
+        FakeVertexMemoryService,
+    )
+    monkeypatch.setenv("EGRESS_AGENT_ENGINE_ID", "reasoningEngines/789")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "project-x")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    store = build_memory_store()
+
+    assert isinstance(store, VertexMemoryBankStore)
+    assert store.health()["agent_engine_id"] == "789"
 
 
 def test_local_rag_retrieves_source_labelled_snippets() -> None:

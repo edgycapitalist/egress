@@ -67,10 +67,10 @@ and is not the critical runtime dependency.
 Redis is used by the deployed engine/run-state path, while the gateway streams
 WebSocket frames directly to the browser. RAG retrieval has a local corpus path
 and a Vertex AI Search adapter used when the deployed datastore is configured.
-Long-term memory has JSONL and Cloud SQL/Postgres backends today; the
-Vertex Memory Bank boundary exists, but the actual Memory Bank resource remains
-a platform follow-up until its API surface is verified. The local default remains
-in-process ADK orchestration so development and tests run offline.
+Long-term memory uses ADK's `VertexAiMemoryBankService` when an Agent Engine id
+is configured, with JSONL and Cloud SQL/Postgres fallbacks for local/offline
+development. The local default remains in-process ADK orchestration so
+development and tests run offline.
 
 ### Calibration against a real episode
 

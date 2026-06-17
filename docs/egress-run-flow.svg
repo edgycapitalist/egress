@@ -92,8 +92,8 @@
 
   <!-- Memory -->
   <rect x="360" y="600" width="440" height="58" rx="10" fill="#F1F3F4" stroke="#9aa0a6" stroke-dasharray="5 3"/>
-  <text x="580" y="623" font-size="13" font-weight="600" text-anchor="middle" fill="#5f6368">Memory interface &#8212; JSONL / Cloud SQL fallback</text>
-  <text x="580" y="641" font-size="10" text-anchor="middle" fill="#80868b">scenario history + calibration records; Vertex Bank when configured</text>
+  <text x="580" y="623" font-size="13" font-weight="600" text-anchor="middle" fill="#5f6368">ADK MemoryService &#8212; Vertex AI Memory Bank</text>
+  <text x="580" y="641" font-size="10" text-anchor="middle" fill="#80868b">scenario history + calibration records; JSONL/Cloud SQL fallback</text>
 
   <!-- memory edges -->
   <g stroke="#9aa0a6" stroke-width="1.5" fill="none" stroke-dasharray="5 3">
