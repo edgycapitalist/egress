@@ -36,7 +36,7 @@ type TickerCheck =
   | { status: "idle" }
   | { status: "checking" }
   | { status: "found"; name: string | null; price: number }
-  | { status: "notfound" };
+  | { status: "unavailable" };
 
 const EXIT_SPEEDS: { key: string; label: string }[] = [
   { key: "patient", label: "Patient" },
@@ -170,20 +170,31 @@ export function ScenarioBuilder({
       return;
     }
     setTickerCheck({ status: "checking" });
+    let cancelled = false;
     const id = setTimeout(() => {
       fetch(`${HTTP_BASE}/api/instrument?symbol=${encodeURIComponent(symbol)}&live=1`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
+          if (cancelled) return;
           const res: TickerCheck =
             d && (d.source === "alphavantage" || d.source === "curated")
               ? { status: "found", name: d.name ?? null, price: d.reference_price }
-              : { status: "notfound" };
-          checkCache.current.set(symbol, res);
+              : { status: "unavailable" };
+          if (res.status === "found") {
+            checkCache.current.set(symbol, res);
+          } else {
+            checkCache.current.delete(symbol);
+          }
           setTickerCheck(res);
         })
-        .catch(() => setTickerCheck({ status: "idle" }));
+        .catch(() => {
+          if (!cancelled) setTickerCheck({ status: "idle" });
+        });
     }, 600);
-    return () => clearTimeout(id);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
   }, [symbol, validatable]);
 
   const mixTotal = useMemo(
@@ -399,12 +410,12 @@ export function ScenarioBuilder({
                     {tickerCheck.name ?? symbol} found at {fmtPrice(tickerCheck.price)}.
                   </span>
                 </>
-              ) : tickerCheck.status === "notfound" ? (
+              ) : tickerCheck.status === "unavailable" ? (
                 <>
                   <AlertCircle className="mt-0.5 h-3 w-3 shrink-0 text-[var(--color-halt)]" />
                   <span className="text-[var(--color-halt)]">
-                    No live data for {symbol}. It may be an unrecognised ticker, or the daily data
-                    limit was reached. It will run on stand-in numbers.
+                    The live feed did not return real data for {symbol} on this check. The run can
+                    still continue on labelled fallback numbers; try again in a moment.
                   </span>
                 </>
               ) : null}
