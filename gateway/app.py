@@ -473,26 +473,52 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
     pace = max(0, int(request.get("pace_ms", DEFAULT_PACE_MS))) / 1000.0
     batch_size = int(request.get("batch_size", DEFAULT_BATCH))
     levers = request.get("scenario") or {}
+    send_lock = asyncio.Lock()
+
+    async def send_json(frame: dict[str, Any]) -> None:
+        async with send_lock:
+            await ws.send_json(frame)
 
     if mode == "live":
+        live_task: (
+            asyncio.Task[tuple[str, str, str | None, dict[str, Any] | None, str]] | None
+        ) = None
         try:
-            replay_path, source, analysis, ensemble, platform = await _run_live(
-                levers,
-                bool(request.get("gemini")),
-                request.get("gemini_mode"),
-                progress=lambda message: ws.send_json(
-                    {"type": "status", "message": message}
-                ),
+            live_task = asyncio.create_task(
+                _run_live(
+                    levers,
+                    bool(request.get("gemini")),
+                    request.get("gemini_mode"),
+                    progress=lambda message: send_json(
+                        {"type": "status", "message": message}
+                    ),
+                )
             )
-            await ws.send_json({"type": "status", "message": "Streaming representative path…"})
+            heartbeat_seconds = max(
+                5.0,
+                float(os.getenv("EGRESS_WS_HEARTBEAT_SECONDS", "12")),
+            )
+            while not live_task.done():
+                await asyncio.sleep(heartbeat_seconds)
+                if not live_task.done():
+                    await send_json(
+                        {
+                            "type": "status",
+                            "message": "Still running the live agent simulation…",
+                        }
+                    )
+            replay_path, source, analysis, ensemble, platform = await live_task
+            await send_json({"type": "status", "message": "Streaming representative path…"})
         except Exception as exc:  # surface a clean error frame, never a stack trace
-            await ws.send_json({"type": "error", "message": f"Live run failed: {exc}"})
+            if live_task is not None and not live_task.done():
+                live_task.cancel()
+            await send_json({"type": "error", "message": f"Live run failed: {exc}"})
             return
     else:
-        await ws.send_json({"type": "status", "message": "Loading saved historical replay…"})
+        await send_json({"type": "status", "message": "Loading saved historical replay…"})
         replay_file = _cached_replay_for(levers.get("symbol"))
         if not replay_file.exists():
-            await ws.send_json({"type": "error", "message": "Flagship replay not found."})
+            await send_json({"type": "error", "message": "Flagship replay not found."})
             return
         cached_config, ensemble = _cached_overlay_config_and_ensemble(replay_file, levers)
         replay_path, source, analysis = str(replay_file), "cached", None
@@ -507,7 +533,7 @@ async def _stream(ws: WebSocket, request: dict[str, Any]) -> None:
         config=cached_config if source == "cached" else None,
         platform=platform,
     ):
-        await ws.send_json(frame)
+        await send_json(frame)
         # Pace the ticks for the animation; give the trailing frames (metrics /
         # analysis / done) a small gap too, so they are not a single burst right
         # before the close. Cloud Run's WebSocket proxy can drop an un-flushed tail
