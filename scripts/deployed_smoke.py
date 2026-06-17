@@ -35,13 +35,19 @@ def _read_status(url: str, *, token: str | None = None, timeout: int = 30) -> in
         return exc.code
 
 
-def _identity_token(audience: str) -> str:
+def _identity_token(audience: str) -> str | None:
     completed = subprocess.run(
         ["gcloud", "auth", "print-identity-token", f"--audiences={audience}"],
-        check=True,
         capture_output=True,
         text=True,
     )
+    if completed.returncode != 0:
+        print(
+            "warning: skipping direct engine health check because this gcloud "
+            f"context cannot mint an audience identity token: {completed.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return None
     return completed.stdout.strip()
 
 
@@ -85,12 +91,13 @@ def _http_smokes(args: argparse.Namespace) -> None:
         raise RuntimeError("cached replay did not include ticks and metrics")
 
     engine_token = _identity_token(args.engine_url.rstrip("/"))
-    engine_health = _read_json(
-        f"{args.engine_url.rstrip('/')}/health",
-        token=engine_token,
-    )
-    if engine_health.get("status") not in {"ok", "degraded"}:
-        raise RuntimeError(f"engine health failed: {engine_health}")
+    if engine_token:
+        engine_health = _read_json(
+            f"{args.engine_url.rstrip('/')}/health",
+            token=engine_token,
+        )
+        if engine_health.get("status") not in {"ok", "degraded"}:
+            raise RuntimeError(f"engine health failed: {engine_health}")
 
     for label, url in {
         "market_data_mcp": args.market_data_mcp_url,
