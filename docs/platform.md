@@ -1,4 +1,4 @@
-# Phase 7 Platform Wiring
+# Platform Wiring
 
 This repo has two execution paths:
 

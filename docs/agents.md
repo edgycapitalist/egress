@@ -1,8 +1,8 @@
-# The ADK orchestration layer (Phase 2)
+# The ADK orchestration layer
 
-This document describes the `agents/` and `mcp/` layers built in Phase 2 and how
-they meet the deterministic engine at the boundary in
-[`contracts.md`](./contracts.md). For the full specification see
+This document describes the `agents/` and `mcp/` layers and how they meet the
+deterministic engine at the boundary in [`contracts.md`](./contracts.md). For
+the full architecture guide see
 [`AGENTS.md`](../AGENTS.md) §4 and §6.
 
 ## The agent tree

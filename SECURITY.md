@@ -26,8 +26,11 @@ days.
 ## Data handling
 
 - The system uses historical, authorised third-party market and news data.
-  Every data source and SDK is declared in the submission's data-sources field.
-- No personal or customer trading data is ingested.
+  Current sources and limitations are documented in `README.md`.
+- The positioning preview can accept user-supplied holdings CSV content for peer
+  evidence. Treat those uploads as sensitive. Do not use real client, personal,
+  or confidential trading data unless the deployment, retention policy, and
+  access controls have been approved for that use.
 
 ## Scope
 

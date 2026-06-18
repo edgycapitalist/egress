@@ -8,7 +8,7 @@ SEC.
 
 ## Episode Corpus
 
-The Phase 6 corpus contains 12 representative historical stress cases:
+The evaluation corpus contains 12 representative historical stress cases:
 
 - `calibration`: cases used to check whether the model reproduces known behavioural
   signatures and known liquid/open controls.
@@ -63,4 +63,3 @@ closed-case signature fit versus the deterministic baseline?
 Positive deltas mean the recorded Gemini assumptions helped. Zero or negative deltas
 mean no measurable lift. The report is allowed to say Gemini adds no value; that is
 more useful than assuming it does.
-

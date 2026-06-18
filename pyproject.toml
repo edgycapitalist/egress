@@ -23,7 +23,7 @@ agents = [
     "google-cloud-discoveryengine>=0.13",
     "google-genai>=0.3",
 ]
-# FastAPI gateway / BFF: WebSocket hub + A2A routing.
+# FastAPI gateway / BFF: WebSocket hub, REST helpers, and Agent Engine route.
 gateway = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
@@ -35,7 +35,7 @@ service = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
 ]
-# Model Context Protocol servers (market data, news).
+# Model Context Protocol servers (market data, news, positioning).
 mcp = [
     "mcp>=1.0",
 ]
@@ -80,8 +80,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-q"
 filterwarnings = [
-    # The ADK workflow agents (Sequential/Loop/Parallel) are required by the
-    # competition rubric (AGENTS.md §4); ADK 2.2 deprecates them. Silence the
+    # The ADK workflow agents (Sequential/Loop/Parallel) are intentionally used
+    # for visible orchestration; some ADK releases deprecate them. Silence the
     # expected notice so the suite output stays readable.
     "ignore:.*(SequentialAgent|LoopAgent|ParallelAgent) is deprecated.*:DeprecationWarning",
 ]

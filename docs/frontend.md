@@ -1,8 +1,8 @@
-# The gateway and frontend (Phase 3)
+# The gateway and frontend
 
-This document describes the `gateway/` and `web/` layers built in Phase 3 — the
-parts a judge actually sees — and how they meet the rest of the system at the
-boundary in [`contracts.md`](./contracts.md). For the full specification see
+This document describes the `gateway/` and `web/` layers — the parts a user
+actually sees — and how they meet the rest of the system at the boundary in
+[`contracts.md`](./contracts.md). For the full architecture guide see
 [`AGENTS.md`](../AGENTS.md) §8.
 
 ## The shape of a run, end to end

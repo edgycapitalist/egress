@@ -79,8 +79,10 @@ eval-holdout: ## Run the holdout-only discrimination eval
 eval-latency: ## Run the offline latency eval over the episode corpus
 	$(PYTHON) -m eval.latency
 
-deploy: ## Deploy agents to Agent Engine and services to Cloud Run (Phase 5)
-	@echo "deploy target is wired in Phase 5 (see scripts/deploy.sh and infra/)."
+deploy: ## Show deployment path (main branch deploys through GitHub Actions)
+	@echo "Deployment is handled by .github/workflows/deploy.yml on pushes to main."
+	@echo "Bootstrap long-lived GCP resources separately; see docs/platform.md."
+	@echo "Run scripts/deployed_smoke.py after deployment to verify the public services."
 
 check-prereqs: ## Verify required tooling is installed
 	@echo "Checking prerequisites..."

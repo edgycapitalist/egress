@@ -83,7 +83,7 @@ make eval-latency              # deterministic engine latency report
 
 The critic has a deterministic stand-in (the verdict and nudges are exact, not a model guess) and a live Gemini judge that writes the same verdict as a narrative (`python -m agents.orchestrator --critic`, add `--live` for Vertex). The backtest runs entirely on the deterministic baseline, so it is reproducible and free.
 
-Phase 6 validation expands beyond the flagship case. The full discrimination eval
+Validation expands beyond the flagship case. The full discrimination eval
 loads the committed public-case corpus in [`eval/episodes`](./eval/episodes), keeps
 calibration and holdout reports separate, and replays recorded Gemini assumption
 fixtures to show whether Gemini improves or worsens the same deterministic runs.

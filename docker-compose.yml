@@ -2,10 +2,9 @@
 # pgvector, Memorystore Redis) so the system runs on a laptop against the
 # deterministic baseline with no cloud cost.
 #
-# Phase 0 brings up the data layer only. The application services (engine,
-# gateway, MCP servers, web) are added as their phases land — their service
-# stanzas are sketched at the bottom of this file, commented out, so the
-# topology is visible without referencing code that does not exist yet.
+# The active local compose path brings up the data layer only. Application
+# service stanzas are sketched at the bottom as optional local topology examples;
+# use the Makefile targets for the normal developer loop.
 
 services:
   postgres:
@@ -41,40 +40,40 @@ volumes:
   egress_pgdata:
 
 # ---------------------------------------------------------------------------
-# Application services — uncommented as each phase is built. Listed here so the
-# local topology mirrors the deployed one (engine + gateway + MCP -> Cloud Run).
+# Application services. These are optional local topology examples mirroring the
+# deployed Cloud Run services.
 # ---------------------------------------------------------------------------
 #
-#  engine:                  # Phase 1 — deterministic simulation service
+#  engine:                  # deterministic simulation service
 #    build: { context: ., dockerfile: Dockerfile, target: engine }
 #    env_file: .env
 #    ports: ["8000:8000"]
 #    depends_on: { postgres: { condition: service_healthy }, redis: { condition: service_healthy } }
 #
-#  market_data_mcp:         # Phase 2 — Market Data MCP server
+#  market_data_mcp:         # Market Data MCP server
 #    build: { context: ., dockerfile: Dockerfile, target: market_data_mcp }
 #    env_file: .env
 #    ports: ["8101:8101"]
 #    depends_on: { postgres: { condition: service_healthy } }
 #
-#  news_mcp:                # Phase 2 — News MCP server
+#  news_mcp:                # News MCP server
 #    build: { context: ., dockerfile: Dockerfile, target: news_mcp }
 #    env_file: .env
 #    ports: ["8102:8102"]
 #
-#  positioning_mcp:         # Phase 4 — Positioning MCP server
+#  positioning_mcp:         # Positioning MCP server
 #    build: { context: ., dockerfile: Dockerfile, target: positioning_mcp }
 #    env_file: .env
 #    ports: ["8103:8103"]
 #    depends_on: { postgres: { condition: service_healthy } }
 #
-#  gateway:                 # Phase 3 — FastAPI gateway / BFF (WebSocket + A2A)
+#  gateway:                 # FastAPI gateway / BFF
 #    build: { context: ., dockerfile: Dockerfile, target: gateway }
 #    env_file: .env
 #    ports: ["8080:8080"]
 #    depends_on: { redis: { condition: service_healthy } }
 #
-#  web:                     # Phase 3 — Next.js + shadcn frontend
+#  web:                     # Next.js + shadcn frontend
 #    build: { context: ./web }
 #    ports: ["3000:3000"]
 #    depends_on: [gateway]

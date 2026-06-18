@@ -354,10 +354,10 @@ egress/
 +-- AGENTS.md
 ```
 
-`infra/` currently contains placeholders rather than a complete Terraform stack.
-Long-lived GCP resources are documented in `docs/platform.md` and prepared as a
-manual/platform bootstrap step; normal app deploys should not silently create
-costly resources.
+`infra/` currently contains placeholders rather than complete cloud
+infrastructure-as-code. Long-lived GCP resources are documented in
+`docs/platform.md` and prepared as a manual/platform bootstrap step; normal app
+deploys should not silently create costly resources.
 
 ---
 

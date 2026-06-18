@@ -1,6 +1,6 @@
 # Working notes for coding agents
 
-Read [`AGENTS.md`](./AGENTS.md) in full first — it is the build specification.
+Read [`AGENTS.md`](./AGENTS.md) in full first — it is the architecture and build guide.
 This file is the short operational companion: the rules that are easy to get
 wrong, the repo map, and the commands. Where this file and `AGENTS.md` disagree,
 `AGENTS.md` wins.
@@ -18,7 +18,7 @@ explain the run.
 - If every LLM call were removed, the deterministic engine must still run a full
   simulation (this is the `DETERMINISTIC_BASELINE` mode).
 
-## Authentication rule (applies to all code, every phase)
+## Authentication rule
 
 Gemini is called **only through Vertex AI**, never through Google AI Studio.
 
@@ -42,13 +42,13 @@ deliberately and keep both sides in sync with it.
 | --- | --- |
 | `agents/` | ADK agents (Gemini via Vertex AI): scenario author, archetypes, analyst, critic, shared helpers in `common/`. |
 | `engine/` | Deterministic simulation core — **no LLM**: order book, population, stats, metrics, replay. |
-| `mcp/` | MCP servers: `market_data/`, `news/`. |
+| `mcp/` | MCP services: `market_data/`, `news/`, `positioning/`. |
 | `memory/` | ADK MemoryService wiring: calibration memory + scenario history. |
-| `gateway/` | FastAPI gateway / BFF: WebSocket hub + A2A routing. |
+| `gateway/` | FastAPI gateway / BFF: WebSocket hub, REST helpers, Agent Engine route. |
 | `web/` | Next.js + shadcn frontend. |
-| `infra/` | Terraform (Agent Engine, Cloud Run, Cloud SQL, Redis). |
-| `eval/` | Agent evals and the backtest against a real episode. |
-| `scripts/` | `deploy.sh`, `seed_data.py`, DB init. |
+| `infra/` | Placeholder only; long-lived GCP resource bootstrap is documented in `docs/platform.md`. |
+| `eval/` | Backtest, holdout/discrimination, latency, and corpus evals. |
+| `scripts/` | Vertex auth check, replay recording, deployed smoke checks, DB init. |
 | `tests/` | Offline-runnable suite (`conftest.py` mocks `google.auth`). |
 | `docs/` | Architecture diagrams, the boundary contract, design notes. |
 
@@ -61,41 +61,26 @@ make start / stop    # local data layer (Postgres + Redis) via docker-compose
 make test            # offline test suite — no network, no credentials
 make lint / fmt      # ruff
 make build           # build all service container images
-make eval            # Phase 4
-make deploy          # Phase 5
+make eval            # calibration backtest
+make deploy          # print the GitHub Actions deployment path
 ```
 
-## Build phases
+## Current operating modes
 
-Follow the order in `AGENTS.md` §11 strictly. **Phases 0–4 are done.**
+- **Cached replay** streams committed NDJSON recordings from `docs/replays/` with
+  no engine, Gemini, cloud, or external data calls.
+- **Deterministic live baseline** runs the ADK lifecycle and deterministic engine
+  with zero LLM calls. This is the default local test path.
+- **Fast live Gemini** asks the Scenario Author for assumptions once through
+  Vertex AI, then runs the deterministic low/base/high ensemble.
+- **Detailed live Gemini** can refresh six archetype stances through the
+  `ParallelAgent` once per simulation window. It is slower and should be used
+  deliberately.
 
-- **Phase 1** — the deterministic engine runs a cascade end to end (`make demo` /
-  `python -m engine`), writes a recorded NDJSON stream, and prints metrics, with no
-  LLM and no cloud.
-- **Phase 2** — the ADK orchestration layer (`agents/`) and the two MCP servers
-  (`mcp/`). Six Tier-A archetype `LlmAgent`s (Gemini via Vertex) run as a
-  `ParallelAgent`, each writing only its own `*_stance` key; a `SequentialAgent`
-  orchestrator runs scenario-author → setup → simulate `LoopAgent` → finalize →
-  analyst. The live Vertex path is the product; **baseline mode swaps the stance
-  producer and analyst for deterministic stand-ins** so the whole pipeline runs
-  with zero LLM calls and is fully testable offline (`make demo-agents`, the
-  `test_orchestrator_baseline` suite). Gemini is never in the per-tick loop —
-  stances refresh once per window. Confirm Vertex auth/quota with
-  `make auth-check` once ADC + a project are set.
-
-- **Phase 3** — the Next.js frontend and the FastAPI gateway (WebSocket streaming
-  of tick telemetry), deployed to Cloud Run with CI/CD.
-- **Phase 4** — the calibration critic (`agents/critic/`) judges a run against the
-  curated real CVNA 2022 episode on three timescale-fair axes (drawdown, stranded
-  liquidity, disorder/halt) and emits bounded per-type stance nudges; a
-  generator-critic loop (`eval/backtest.py`, `make eval`) re-runs an over-rational
-  crowd until it reproduces the episode's signature. Deterministic stand-in for
-  offline/CI (`BaselineCriticAgent`), live Gemini judge for the narrative
-  (`--critic`). It owns the `calibration_report` / `calibration_adjustments`
-  state keys; the archetypes read the adjustments at run start.
-
-**Phase 4A (cross-run memory) is next**, then RAG grounding (Vertex AI Search)
-and A2A transport.
+The calibration critic, RAG retrieval, cross-run memory facade, positioning MCP,
+Agent Engine facade, Cloud Run service wrappers, and CI/CD deployment workflow
+are all present in the repository. Long-lived GCP resource bootstrap remains a
+documented platform operation, not a one-command local Make target.
 
 ## Conventions
 
