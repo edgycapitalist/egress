@@ -56,21 +56,18 @@ what caused a real market move.
 
 ![Egress run flow](./docs/egress-run-flow.svg)
 
-The diagrams show the current deployed main path plus the explicitly labelled
-fallbacks and platform hooks. The hosted build uses Cloud Run for the frontend,
-gateway, deterministic engine service, and MCP services; the gateway routes live
-Gemini runs through the deployed Agent Engine resource and falls back
-deterministically when the remote path is unavailable. Agent cards provide
-A2A-style discovery metadata, but full A2A transport is not required for Track 1
-and is not the critical runtime dependency.
+The diagrams show the current deployed path. The hosted build uses Cloud Run for
+the frontend, gateway, deterministic engine service, and MCP services; the
+gateway routes live Gemini runs through the deployed Agent Engine resource.
+Agent cards provide A2A-style discovery metadata, but full A2A transport is not
+required for Track 1 and is not the critical runtime dependency.
 
 Redis is used by the deployed engine/run-state path, while the gateway streams
-WebSocket frames directly to the browser. RAG retrieval has a local corpus path
-and a Vertex AI Search adapter used when the deployed datastore is configured.
-Long-term memory uses ADK's `VertexAiMemoryBankService` when an Agent Engine id
-is configured, with JSONL and Cloud SQL/Postgres fallbacks for local/offline
-development. The local default remains in-process ADK orchestration so
-development and tests run offline.
+WebSocket frames directly to the browser. RAG retrieval uses a local corpus path
+with a Vertex AI Search adapter for the deployed datastore. Long-term memory
+uses ADK's `VertexAiMemoryBankService` when an Agent Engine id is configured.
+Local development still has deterministic/offline safeguards so tests can run
+without cloud credentials.
 
 ### Calibration against a real episode
 
