@@ -1,342 +1,448 @@
-# Egress — Architecture and Build Document
+# Egress AI - Architecture and Build Guide
 
-This is the build specification for Egress, our entry to the Google for Startups AI Agents Challenge (Track 1, Build). It is written to be handed directly to Claude Code and Codex. Read this whole document before writing code. The repo and package name is `egress`; the product name is Egress AI.
+This file is the working guide for coding agents in this repository. It should
+describe the product as it exists now, not an aspirational diagram. The repo and
+package name is `egress`; the product name is Egress AI.
 
----
-
-## 1. What we are building
-
-Egress simulates how an investment firm's position would behave in a crisis, before the money is committed.
-
-The user describes a position and a stress event in plain language. The system simulates the sell-off as a market of thousands of independent trading agents that each act on their own and react to each other. Their orders meet in an order book that sets the prices, so the price moves come out of the agents' collective behaviour rather than being assumed. The user sees whether the position can actually be sold, how far the price moves while selling, and how much stays stuck, and can vary how much is held and how fast it is sold to find the point where the exit closes.
-
-The problem this solves: firms routinely measure how much they could lose on a position, but not whether they could actually sell it in a crisis. Many firms unknowingly hold the same crowded trades, and when a shock hits and they all sell at once there are not enough buyers, the price collapses, and they cannot get out without heavy losses. There is no easy way today to test how a position behaves in that moment before committing.
-
-### The single most important design principle
-
-The language model is one part of the system, not the engine. The market mechanics (the order book, price formation, the tick loop, the metrics) are deterministic code. Most of the thousands of agents are cheap deterministic agents. A small number of Gemini agents set the behavioural mood for each investor type and explain what happened. If you removed every LLM call, the deterministic engine would still run a full simulation. This is both a hard requirement for scaling to thousands of agents and the thing that scores well on the technical criteria. Do not put a Gemini call in the inner per-agent per-tick loop.
+Read this before changing code. Keep future edits candid about what is observed,
+what is simulated, and what is still an approximation.
 
 ---
 
-## 2. Competition constraints this build must satisfy
+## 1. Product Promise
 
-These are mandatory. The build is invalid if it misses any of them.
+Egress simulates how an investment position could behave during a crisis exit
+before capital is committed. A user describes a position and stress event in
+plain language. Egress turns that into a scenario, builds a simulated crowd of
+market participants, runs their orders through a deterministic order-book
+engine, and reports whether the position clears, how far the simulated price
+moves while selling, and how much remains stuck.
 
-- Intelligence: Gemini models, accessed through Vertex AI on the Gemini Enterprise Agent Platform.
-- Orchestration: Google Agent Development Kit (ADK), Python.
-- Infrastructure: deployed on Google Cloud. Agents go to Vertex AI Agent Engine (Agent Runtime). Web services (gateway, frontend, simulation service) go to Cloud Run. Local-only does not satisfy the rules.
-- MCP: agents connect to external tools and data through the Model Context Protocol. This is central to Track 1.
-- Grounding and RAG: use Vertex AI Search over a small corpus of historical crisis episodes and market microstructure references to ground the explanation and calibration agents.
-- New project only, original work, built during the contest period.
-- Third-party data and SDKs must be ones we are authorised to use, and must be declared in the submission.
-- Testing: the deployed system must be reachable by judges for free during judging. Provide a public URL and credentials if anything is private.
+This is an assumption-based stress simulator, not a trading forecast and not a
+claim of exact causal attribution. It uses real and free data where available
+(daily OHLCV, news headlines, public positioning evidence), then clearly labels
+synthetic or curated assumptions when free sources cannot support a stronger
+claim.
 
-A2A note: A2A is only mandatory for Track 3. We are Track 1, so A2A is optional. We include it because it is cheap here and lifts the technical and innovation scores: the Gemini archetype agents and the orchestrator communicate over A2A and are discoverable via agent cards. Keep it, but it is the first thing to cut if the timeline is at risk.
+### The core design rule
 
-### Scoring criteria, and how the architecture targets each
+Gemini is one part of the system, not the market engine. Gemini/ADK is used for
+scenario interpretation, mood/stance assumptions, analysis, and calibration
+narrative. The order book, price formation, tick loop, population actions,
+metrics, replay, and ensemble bands are deterministic Python code. Do not put a
+Gemini call inside the per-agent or per-tick loop.
 
-- Technical Implementation (30 percent): clean code, well documented, deep use of ADK core concepts (agents, sessions, state, runners, the workflow agents SequentialAgent, LoopAgent, ParallelAgent, the generator-critic loop, AgentTool), MCP tool integration, and a real Google Cloud deployment. The deterministic-engine-plus-LLM split shows engineering judgement about where the model belongs.
-- Business Case (30 percent): the problem section above. Crowded-exit risk is one of the most damaging and well-documented failure modes in markets. The output is a concrete decision aid.
-- Innovation and Creativity (20 percent): a heterogeneous LLM-and-deterministic agent crowd that simulates an unwind, with a plain-language explanation of why the exit closed, and a calibration step against a real historical episode. The wedge over existing crowding analytics (which are static scores) is that we simulate the unwind as it happens.
-- Demo and Presentation (20 percent): a clear problem, a vivid demo of a cascade unfolding with the order book draining, a plain-language explanation, an architecture diagram, and documentation of how ADK and the tools were used. Cached replay guarantees the demo runs cleanly.
+The system must continue to run in a deterministic baseline mode with zero model
+calls. That is both the cost-control path and the proof that the model tunes and
+explains assumptions rather than being the engine.
 
 ---
 
-## 3. System architecture
+## 2. Current Deployed Shape
 
-This is the **target** architecture. As shipped, Phases 0 to 4 are built: the deterministic engine, the ADK orchestration (scenario author, the six archetype mood-setters, the simulate loop, the analyst, and the **calibration critic** with a backtest against a real episode), the two MCP servers, the gateway plus frontend, and a Cloud Run deployment. Cross-run memory (Memory Bank), Vertex AI Search (RAG) grounding, and A2A transport are later phases (§11); the gateway currently invokes the orchestrator in-process rather than over A2A.
+The current public demo URL is:
+
+```text
+https://egress-frontend-978090004115.us-central1.run.app
+```
+
+The deployed path uses:
+
+- Cloud Run for the frontend, gateway, deterministic engine service, and MCP
+  services.
+- Vertex AI Agent Engine for the ADK orchestrator facade.
+- Gemini via Vertex AI only. AI Studio API keys are not used.
+- Three MCP services: market data, news, and positioning.
+- Redis for deployed engine/run-state storage.
+- Postgres/Cloud SQL for cached market/news/positioning responses and local data
+  support.
+- ADK `VertexAiMemoryBankService` / Vertex AI Memory Bank when an Agent Engine
+  resource id is configured.
+- A local corpus retriever with a Vertex AI Search adapter for RAG grounding.
+- Agent cards for A2A-style discovery metadata.
+
+Full A2A transport is not mandatory for Track 1 and is not the critical runtime
+dependency here. The gateway currently routes live Gemini runs through the
+deployed Agent Engine facade, while local development can call the in-process ADK
+driver. Agent cards live under `docs/agent-cards/`.
+
+The gateway defaults to a fast live Gemini strategy for user latency: Gemini
+builds scenario assumptions once, then the deterministic low/base/high ensemble
+runs. The slower detailed ADK path with per-window archetype stance refresh still
+exists for CLI/demo use and for `EGRESS_GEMINI_LIVE_MODE=detailed`.
+
+---
+
+## 3. System Architecture
 
 ```mermaid
 graph TD
     User["User"]
     FE["Frontend<br/>Next.js + shadcn/ui<br/>Cloud Run"]
-    GW["Gateway / BFF<br/>FastAPI · WebSocket hub · A2A routing<br/>Cloud Run"]
+    GW["Gateway / BFF<br/>FastAPI WebSocket hub<br/>Cloud Run"]
 
-    subgraph AgentEngine["Vertex AI Agent Engine (ADK agents, Gemini)"]
-        ORCH["Orchestrator<br/>SequentialAgent"]
-        SCEN["Scenario Author<br/>LlmAgent"]
-        ARCH["Archetype Agents<br/>ParallelAgent of LlmAgents<br/>(one mood-setter per investor type)"]
-        ANALYST["Analyst<br/>LlmAgent (explains the run)"]
-        CRITIC["Calibration Critic<br/>LlmAgent (LLM-as-judge)"]
+    subgraph AgentEngine["Vertex AI Agent Engine"]
+        APP["Egress Agent Engine facade"]
+        ORCH["ADK Orchestrator<br/>SequentialAgent"]
+        SCEN["Scenario Author<br/>Gemini LlmAgent"]
+        ARCH["Archetype Agents<br/>ParallelAgent of 6 Gemini LlmAgents"]
+        ANALYST["Analyst<br/>Gemini LlmAgent"]
+        CRITIC["Calibration Critic<br/>Gemini LlmAgent"]
     end
 
-    subgraph Engine["Simulation Engine (deterministic, NO LLM) · Cloud Run service"]
-        OB["Order book / matching engine"]
-        POP["Vectorized agent population<br/>(thousands)"]
-        STAT["Markov / statistical models"]
-        MET["Metrics: fill rate, slippage,<br/>drawdown, stuck %, halt"]
-        REPLAY["NDJSON record / replay"]
+    subgraph Engine["Simulation Engine - deterministic, no LLM"]
+        OB["Persistent stylized order book"]
+        POP["Vectorized agent population"]
+        PEER["Peer-crowding cohorts"]
+        MET["Metrics + attribution estimates"]
+        REPLAY["NDJSON replay"]
     end
 
-    subgraph MCP["MCP servers"]
+    subgraph MCP["MCP services"]
         MD["Market Data MCP"]
         NEWS["News MCP"]
+        POS["Positioning MCP"]
     end
 
     subgraph Vertex["Vertex AI"]
         GEM["Gemini models"]
-        SEARCH["Vertex AI Search (RAG)"]
-    end
-
-    subgraph Mem["Memory — ADK MemoryService"]
-        MB["Vertex AI Memory Bank<br/>calibration memory · scenario history"]
+        SEARCH["Vertex AI Search adapter"]
+        MEM["ADK MemoryService<br/>Vertex AI Memory Bank"]
     end
 
     subgraph Data["Data layer"]
-        PG["Postgres + pgvector<br/>(history cache, episodes, scenarios, memory fallback)"]
-        REDIS["Redis<br/>(tick state, pub/sub fanout)"]
+        PG["Postgres / Cloud SQL"]
+        REDIS["Redis"]
     end
 
     User --> FE
     FE -->|WebSocket| GW
-    GW -->|A2A| ORCH
+    GW -->|Agent Engine route| APP
+    APP --> ORCH
     ORCH --> SCEN
     ORCH --> ARCH
     ORCH --> ANALYST
     ORCH --> CRITIC
-    ORCH -->|AgentTool / service call| Engine
-    SCEN -->|MCP| MD
-    ARCH -->|MCP| NEWS
-    ARCH -->|MCP| MD
+    ORCH -->|service call / tool boundary| Engine
+    SCEN --> MD
+    ARCH --> NEWS
+    ARCH --> MD
+    ORCH --> POS
     ANALYST --> SEARCH
     CRITIC --> SEARCH
-    ARCH --> GEM
     SCEN --> GEM
+    ARCH --> GEM
     ANALYST --> GEM
     CRITIC --> GEM
+    ORCH --> MEM
+    ANALYST --> MEM
+    CRITIC --> MEM
     Engine --> REDIS
-    Engine --> PG
     MD --> PG
-    GW --> REDIS
-    CRITIC -->|read + write calibration| MB
-    ANALYST -->|read scenario history| MB
-    ORCH -->|write run outcome| MB
-    MB -.->|local fallback| PG
+    NEWS --> PG
+    POS --> PG
 ```
 
-### Component summary
-
-- Frontend (Cloud Run): Next.js app with shadcn/ui. Scenario builder, live and replay visualisation of the order book draining and the cascade, metrics dashboard, the plain-language explanation, and the levers to vary position size, exit speed, and crowding mix. A cached-versus-live toggle.
-- Gateway / BFF (Cloud Run): FastAPI. A WebSocket hub that streams tick telemetry to the frontend, and an A2A client that routes requests to the ADK orchestrator. Batches tick broadcasts so thousands of updates do not overwhelm the socket (the thundering-herd lesson from race-condition).
-- ADK agents (Agent Engine): the orchestrator and the Gemini agents. These supply judgement, not market mechanics. Detailed in section 4.
-- Simulation engine (Cloud Run service, deterministic, no LLM): the order book, the agent population, the statistical models, the metrics, and the NDJSON record/replay. Detailed in section 5.
-- MCP servers: market data and news tools the agents call. Section 6.
-- Vertex AI: Gemini for the agents, Vertex AI Search for RAG grounding. Section 7.
-- Memory (ADK MemoryService, Vertex AI Memory Bank): long-term memory across runs. Holds the critic's learned calibration adjustments and each user's scenario history. Detailed in section 7A.
-- Data layer: Postgres with pgvector for the history cache, the episode corpus and its embeddings, saved scenarios, and the local memory fallback; Redis for tick state and pub/sub fanout.
+The SVG diagrams in `docs/egress-architecture.svg` and
+`docs/egress-run-flow.svg` are the user-facing versions of this architecture.
+Keep them visually consistent with this file and with `README.md`.
 
 ---
 
-## 4. The agent design (ADK)
+## 4. ADK Agent Design
 
-The agents are organised in three tiers. This is how we get thousands of agents without thousands of LLM calls.
+The agent layer is built around a real ADK `SequentialAgent` lifecycle. The
+detailed tree is:
 
-### Tier A — Gemini archetype agents (few, the judgement layer)
-
-One Gemini-powered ADK `LlmAgent` per investor type. These do not run per individual agent. Each reads the scenario author's brief (its rationale, the scheduled stress events, and a faithful echo of the user's own words, so the described situation and not just the ticker drives the stance), the latest news for the instrument and period (over MCP), and the current market state, and outputs a structured behavioural stance for its whole type, for example an aggressiveness level and an adjusted sell threshold. The stance is written to `session.state` via `output_key`. The stance is refreshed every k ticks, not every tick, to control cost.
-
-The model writes to a permissive stance schema with no value bounds, and an after-agent callback clamps the result into the contract's `Stance` ranges before the engine reads it. This is deliberate: ADK validates `output_schema` strictly, and Gemini occasionally emits a slightly out-of-range value (a negative threshold, say), which a strict schema would turn into a crash mid-run. Keeping the model schema permissive and clamping deterministically is what keeps a live run robust.
-
-Investor types (each is an archetype agent plus a deterministic population that follows its stance):
-
-- Forced sellers, who must sell because they hit a risk limit, face withdrawals, or get a margin call.
-- Panic sellers, who sell into fear as bad news and falling prices build.
-- Trend followers, who sell because the price is already falling and speed up the move.
-- Bargain hunters, who buy once the price has dropped far enough to look cheap.
-- Market makers, who trade both sides when calm but pull back under stress.
-- Long-term holders, who mostly sit still.
-
-The archetype agents run as a `ParallelAgent` (fan-out), each writing to a distinct `output_key` to avoid state races. This is Google's documented parallel fan-out pattern.
-
-### Tier B — Deterministic population agents (thousands, the bodies)
-
-Each individual investor is a lightweight deterministic agent with its own holdings, limits, and triggers, parameterised by its type's current stance from Tier A. These run inside the simulation engine, vectorised, with no LLM calls. They convert the archetype stance into concrete orders. Staggered parameters across the population are what turn one early seller into a cascade: one breaks, the price moves into the next one's limit, and so on.
-
-### Tier C — Deterministic market mechanics (no LLM)
-
-The order book, price formation, the tick loop, and the metrics. Pure code. Section 5.
-
-### The orchestration agents (ADK)
-
-- Scenario Author (`LlmAgent`, coordinator role): turns the user's plain-language position and stress event into a structured scenario draft (instrument, position size, exit speed, crowding mix, shock schedule). Grounds on the market data MCP to resolve the instrument and its reference data. An `after_agent_callback` then deterministically assembles and validates the full `RunConfig` before the run starts: the model chooses what to simulate, but the callback guarantees a schema-valid config and that ADV, free float, and halt tier come from the data source rather than the model. The same callback composes a scenario brief, the model's rationale plus the scheduled stress-event notes plus a trimmed echo of the user's own words, which the archetype agents read so the described situation drives their stances.
-- Orchestrator (`SequentialAgent`): the run lifecycle. Setup, then the simulate loop, then analyse. Wraps the simulation engine as an `AgentTool` or calls it as a service.
-- Simulate loop (`LoopAgent`, up to N ticks): advances the deterministic engine, and every k ticks re-invokes the archetype agents to refresh stances based on the new market state and any new news.
-- Analyst (`LlmAgent`): reads the deterministic event log after the run and writes the plain-language narrative of how the exit unfolded. Grounded in the sim log and in Vertex AI Search. The simulation is the source of truth; the model interprets, it does not invent the dynamics.
-- Calibration Critic (`LlmAgent`, generator-critic / LLM-as-judge): compares the simulated unwind to a replayed real historical episode and flags where the simulated crowd behaved implausibly, for example too calmly. This is the quality gate that addresses the known tendency of LLM-driven market agents to behave too rationally. Implemented with a `LoopAgent` that can adjust archetype parameters and re-run, with a max iteration cap.
-
-ADK patterns used, explicitly: sequential pipeline (lifecycle), loop (tick engine, stance refresh, calibration), parallel fan-out (archetype agents), coordinator (scenario author), generator-critic (calibration), hierarchical via AgentTool (engine wrapped as a tool), and optional human-in-the-loop (the user varies and re-runs scenarios). State is passed through `session.state` with descriptive `output_key`s. Use the ADK `Runner` to execute and ADK sessions for state.
-
-### Pseudocode sketch (ADK, illustrative)
-
-```python
-# Archetype mood-setter, one per investor type
-forced_seller_mood = LlmAgent(
-    name="ForcedSellerMood",
-    model="gemini-2.5-flash",
-    instruction=(
-        "You set the behaviour of forced sellers given the scenario, the latest "
-        "news, and the current market state. Output a JSON stance: "
-        "{aggressiveness: 0..1, sell_threshold_pct: float}. Be concrete."
-    ),
-    tools=[news_mcp_tool, market_data_mcp_tool],
-    output_key="forced_seller_stance",
-)
-# ...one per type...
-
-archetypes = ParallelAgent(
-    name="Archetypes",
-    sub_agents=[forced_seller_mood, panic_mood, trend_mood,
-                bargain_mood, market_maker_mood, holder_mood],
-)
-
-simulate_loop = LoopAgent(
-    name="SimulateLoop",
-    max_iterations=MAX_TICK_WINDOWS,
-    sub_agents=[archetypes, advance_engine_agent],  # engine advance is deterministic
-)
-
-orchestrator = SequentialAgent(
-    name="EgressRun",
-    sub_agents=[scenario_author, setup_agent, simulate_loop, analyst, critic],
-)
+```text
+EgressRun (SequentialAgent)
++-- ScenarioAuthor      LlmAgent  -> scenario_config        (live detailed path)
++-- SetupEngine         BaseAgent -> market_state, replay_ref
++-- SimulateLoop        LoopAgent
+|   +-- Archetypes      ParallelAgent of 6 LlmAgents -> *_stance (live detailed)
+|   |   +-- baseline    BaselineStancesAgent -> same stance keys, no LLM
+|   +-- AdvanceEngine   BaseAgent -> engine.advance(...)
++-- FinalizeEngine      BaseAgent -> run_metrics, replay_ref
++-- LoadMemoryContext   BaseAgent -> memory_context
++-- Analyst             LlmAgent or baseline template
++-- CalibrationCritic   LlmAgent or baseline critic (when enabled)
++-- PersistMemory       BaseAgent -> scenario/calibration memory
 ```
 
-The engine advance step inside the loop is a deterministic tool call, not an LLM agent. It runs k ticks of the order book and population in the engine service and returns the new state to `session.state`.
+ADK patterns used explicitly: `SequentialAgent`, `LoopAgent`, `ParallelAgent`,
+sessions/state, callbacks, MCP tools as ADK `FunctionTool`s, generator-critic
+calibration, and deterministic guardrails around model outputs. The installed ADK
+may emit deprecation warnings for workflow agents; the repo accepts those
+warnings because the rubric values visible ADK orchestration.
+
+### Fast live path
+
+The gateway's normal user-facing live Gemini path is fast mode:
+
+1. Build/validate a deterministic `RunConfig` from UI levers and evidence.
+2. Call the Gemini Scenario Author once through Vertex AI (through Agent Engine
+   in deployed mode, or the local ADK runner in local live mode).
+3. Merge the model's scenario assumptions into the validated config.
+4. Run the deterministic low/base/high ensemble.
+5. Stream replay frames, metrics, bands, timing, and analysis to the frontend.
+
+If the Gemini assumption step times out or errors, the gateway returns the
+deterministic ensemble rather than failing the run. The timing report records
+the fallback.
+
+### Detailed live path
+
+The detailed path still runs the six Gemini archetype agents as a
+`ParallelAgent`, one per investor type:
+
+- forced seller
+- panic seller
+- trend follower
+- bargain hunter
+- market maker
+- long-term holder
+
+Each writes to a distinct `*_stance` key so the fan-out does not race on shared
+state. Stances are refreshed once per simulation window, never per individual
+agent and never per tick.
+
+The model-facing stance schema is permissive where needed, and callbacks or
+contract validation clamp outputs into the engine's `Stance` ranges before the
+deterministic engine reads them.
+
+### Baseline path
+
+Baseline mode swaps model agents for deterministic stand-ins and still runs the
+same lifecycle boundary. It is used by tests, local demos, and cost-free
+development. Do not break it.
 
 ---
 
-## 5. The simulation engine (deterministic core, no LLM)
+## 5. Deterministic Engine
 
-This is the heart of the system and it contains no LLM calls. Build it so it can run thousands of agents per tick cheaply, vectorised with NumPy.
+The deterministic core lives under `engine/` and contains no LLM calls.
 
-- Order book: a price-time priority limit order book. Submit, cancel, match. Produces fills, last price, best bid and offer, and depth at each level.
-- Tick loop: each tick, every population agent decides an action based on the current market state and its type's current stance, orders are submitted, the book matches, price and liquidity update, and metrics are recorded. Up to N ticks per run.
-- Population: each agent has type, holdings, a risk limit, a trigger, and a starting position in the crowded trade. Generated from the scenario's crowding mix with staggered parameters.
-- Statistical / Markov agents: for the types whose micro-behaviour is statistical, fit a transition model to the real historical returns of the instrument (pulled via the market data MCP) and sample the next-move intention. This is what makes those agents grounded rather than invented.
-- Halt constraint: model the single-stock volatility halt as a known, fixed rule. If the price moves past the band in a short window, trading pauses. A position caught on the wrong side of a halt is one concrete way the exit closes. This is a constraint the engine enforces, not something the user tunes.
-- Metrics: fill rate (how much of the position sold), implementation shortfall and slippage (how far the price moved while selling), max drawdown, time to exit, percentage left stuck, and whether a halt triggered.
-- Record and replay: write each run as an NDJSON stream of tick events. The frontend can replay it exactly, with no live LLM or engine calls. This is the demo reliability mechanism and the deterministic baseline, copied from race-condition.
+What is implemented:
 
-Provide a deterministic baseline mode where the archetype stances come from a fixed heuristic instead of Gemini, so the whole system can run with zero LLM calls for load testing, cost-free development, and as the proof that the model is one part of the system.
+- A stylized price-time-priority order book in `engine/orderbook/book.py`.
+- Resting orders that persist across ticks, age, cancel, and replenish based on
+  stress.
+- A vectorized NumPy population with staggered holdings, limits, triggers, and
+  peer-crowding cohorts.
+- Exogenous shock scheduling from the scenario.
+- A fixed single-stock volatility-halt rule.
+- Matched-fill metrics: fill rate, slippage, implementation shortfall, drawdown,
+  stuck percentage, time to exit, VWAP, and halt state.
+- Heuristic attribution and paired counterfactual estimates where configured.
+- NDJSON record/replay streams.
+- Low/base/high ensemble runs for decision-grade bands instead of one point
+  estimate.
 
----
-
-## 6. MCP servers
-
-Build two MCP servers. Agents call them as tools. This satisfies the Track 1 MCP requirement and keeps data access clean and swappable.
-
-- Market Data MCP. Tools: `get_historical_window(instrument, start, end)`, `get_instrument_reference(instrument)` returning average daily volume, free float, and halt tier, and `get_liquidity_profile(instrument)`. Backed by the real Alpha Vantage `TIME_SERIES_DAILY` feed (key in `ALPHAVANTAGE_API_KEY`) for OHLCV and reference data, cached in Postgres and call-budgeted for the free tier, with a deterministic synthetic fallback when no key is set or a call is throttled. Used by the scenario author (to resolve and validate the instrument) and by the engine's statistical fitting.
-- News MCP. Tools: `get_event_news(instrument, period)` and `get_sentiment(text)`. Backed by the real Alpha Vantage `NEWS_SENTIMENT` feed (same key and Postgres cache as the market data MCP), with a deterministic synthetic crisis tape as the offline fallback. Used by the archetype agents to read the scenario's news and set their mood.
-
-Both servers use real, authorised Alpha Vantage data, declared in the submission. The deterministic synthetic fallback keeps the test suite and offline demos running with no key and no network. The flagship demo resolves CVNA (Carvana), the late-2022 crowded unwind, against these feeds. Historical daily data is sufficient for the build; live real-time feeds are a later upgrade, not a day-one requirement, and we say so honestly in the submission. Declare every data source and API in the submission's data sources and third-party fields.
-
----
-
-## 7. Grounding and RAG
-
-Build a small Vertex AI Search corpus of historical crisis episodes and short market-microstructure references. The analyst agent uses it to ground its explanation of the unwind, and the calibration critic uses it to compare the simulated run against how a real episode actually behaved. Keep the corpus small and curated; this is grounding for credibility, not a large knowledge base.
+Important caveat: this is a simulated order book built from agents and ADV-scaled
+liquidity. It is not observed Level 2 exchange depth, a prime-broker feed, or a
+paid all-holder positioning feed. Price moves come from matched simulated orders
+plus scheduled exogenous shock gaps.
 
 ---
 
-## 7A. Memory across runs (long-term)
+## 6. MCP Services and Data
 
-Grounding and RAG above are read-only reference. This section is different: it is memory the system writes and reads as it is used, so the product improves and remembers across separate runs. Implement it with the ADK `MemoryService` backed by Vertex AI Memory Bank, with pgvector as the local fallback when running without the cloud. Do not confuse this with `session.state`, which is short-term memory inside a single run.
+There are three MCP services.
 
-Two distinct uses, both genuine, not decorative:
+### Market Data MCP
 
-- Calibration memory. The calibration critic learns how to adjust the crowd so it stops behaving too rationally when checked against a real historical episode. Those learned adjustments (which archetype parameters were nudged, and in which direction, for which kind of scenario) are written to memory and read back at the start of later runs. The simulated crowd then gets better calibrated over time instead of relearning from scratch every run. This serves the hardest problem in the system, behavioural fidelity, and is the more important of the two.
-- Scenario history. Each run's scenario and outcome is written to memory per user. The analyst reads it so it can compare across runs, for example noting that the current position is more fragile than one the user tested earlier, and the frontend can list and reopen past simulations.
+`mcp/market_data` exposes daily OHLCV/reference tools. With
+`ALPHAVANTAGE_API_KEY` set, it calls Alpha Vantage `TIME_SERIES_DAILY` and caches
+responses. Without a key, or when throttled, it returns deterministic synthetic
+data labelled as such.
 
-Where it sits: the critic reads and writes calibration memory, the orchestrator writes the run outcome at the end of a run, and the analyst reads scenario history when composing its explanation. Memory Bank is the store; pgvector holds the same records locally as a fallback.
+Free-tier daily bars provide recent conditions, not full historical crisis
+windows. Cached mode replays committed historical recordings; live mode uses the
+instrument's current available daily data.
 
-Honest scope: long-term memory is a stretch item for a 2 to 3 hour window. The thin slice runs without it. But build at least a minimal version, because it is the difference between a comprehensive multi-agent system and a clever pipeline, and it is the platform capability (Agent Memory Bank) that a judge will look for. If time forces a cut, implement scenario history (simpler) and stub calibration memory behind the same interface.
+### News MCP
+
+`mcp/news` exposes event-news and sentiment tools. With an Alpha Vantage key, it
+uses `NEWS_SENTIMENT`; otherwise it uses deterministic synthetic crisis tape and
+lexicon sentiment.
+
+### Positioning MCP
+
+`mcp/positioning` supplies free peer-crowding evidence. Source precedence is:
+
+1. User-uploaded holdings CSV.
+2. Opt-in SEC EDGAR public JSON (`EGRESS_ENABLE_SEC_EDGAR=true` and a descriptive
+   `SEC_USER_AGENT`).
+3. Curated public crisis fixtures.
+4. Deterministic synthetic assumptions.
+
+SEC evidence is useful but conservative. It does not become a paid-grade
+all-holder aggregation feed, and the product must label the evidence source and
+confidence.
+
+The agents currently use in-process ADK `FunctionTool` wrappers for these tools.
+The `server.py` files are the Cloud Run MCP service surfaces and support
+streamable HTTP when deployed.
 
 ---
 
-## 8. Frontend (Next.js + shadcn/ui, Cloud Run)
+## 7. RAG and Memory
 
-- Scenario builder: plain-language description of the position and the stress event, plus controls for position size, exit speed, and crowding mix. shadcn form components.
-- Visualisation: the price path over the run, the order book depth draining as the crowd sells, fill progress against the target, and a clear marker when a halt triggers. This is the demo centrepiece, so make the cascade legible.
-- Metrics panel: fill rate, slippage, drawdown, percentage stuck, time to exit.
-- Explanation panel: the analyst agent's plain-language narrative of why the exit closed.
-- Levers panel: change size, exit speed, and crowding mix, and re-run.
-- Cached versus live toggle: boots in cached replay mode for a reliable demo, with a live mode that runs the agents for real.
+RAG grounding is implemented through `rag/retriever.py`: a local curated corpus
+path plus a Vertex AI Search adapter when `VERTEX_SEARCH_DATASTORE_ID` and
+related env vars are configured. The analyst and critic include source-labelled
+retrieved snippets in their prompts. The simulation log and deterministic metrics
+remain the source of truth.
 
-Before building any UI, the coding agent should read `/mnt/skills/public/frontend-design/SKILL.md` for the design tokens and styling constraints in this environment, and follow it. Keep the look restrained and intentional, not a default template.
+Long-term memory is implemented behind `memory/store.py`.
+
+- In deployed/Vertex mode, Egress uses ADK's `VertexAiMemoryBankService`, scoped
+  by `EGRESS_MEMORY_AGENT_ENGINE_ID` or `EGRESS_AGENT_ENGINE_ID`.
+- Local/offline paths use JSONL or Postgres through the same memory facade.
+- Scenario history and calibration records are both represented.
+
+Do not confuse long-term memory with ADK `session.state`. `session.state` is the
+short-term state for one run; Memory Bank is cross-run memory.
 
 ---
 
-## 9. Repository structure
+## 8. Frontend
 
-Mirror the discipline of Google's race-condition repo: a real Makefile, a multi-stage Dockerfile, a docker-compose that mirrors the cloud topology locally, a docs subtree, offline-runnable tests, CI, an eval target, Terraform that scales to zero, and the cached-replay and deterministic-baseline variants.
+The frontend lives under `web/` and is a Next.js/Tailwind/shadcn app. It should
+remain a usable product surface, not a marketing page.
 
-```
+Expected surfaces:
+
+- Scenario builder with plain-language stress text.
+- Position size, exit speed, crowding, time-scale, and peer-evidence controls.
+- Cached/live mode and real-Gemini toggle.
+- Price/replay visualization and order-book depth.
+- Metrics, bands, stuck amount, halt state, and impact attribution.
+- Analyst explanation and evidence labels.
+- Scenario history/reopen surfaces where supported by memory/backend data.
+
+After significant frontend changes, run `npm run build` in `web/` and inspect the
+local app in the browser when feasible.
+
+---
+
+## 9. Repository Map
+
+```text
 egress/
-├── agents/                  # ADK agents (Python, Gemini)
-│   ├── scenario_author/
-│   ├── archetypes/          # one mood-setter LlmAgent per investor type
-│   ├── analyst/
-│   ├── critic/
-│   └── common/              # session/state helpers, runner setup, schemas
-├── engine/                  # deterministic simulation core (NO LLM)
-│   ├── orderbook/
-│   ├── population/          # vectorized agents
-│   ├── stats/               # markov/statistical fitting
-│   ├── metrics/
-│   └── replay/              # NDJSON record/replay
-├── mcp/
-│   ├── market_data/
-│   └── news/
-├── memory/                  # ADK MemoryService wiring: calibration memory + scenario history
-├── gateway/                 # FastAPI WebSocket hub + A2A routing
-├── web/                     # Next.js + shadcn frontend
-├── infra/                   # Terraform (Agent Engine, Cloud Run, Cloud SQL, Redis)
-├── docs/                    # architecture, design decisions, protocols
-├── eval/                    # agent evals, backtest vs a real episode
-├── scripts/                 # deploy.sh, seed_data.py
-├── tests/                   # offline-runnable (mock google.auth in conftest.py)
-├── Makefile
-├── Dockerfile
-├── docker-compose.yml       # postgres, redis, mock data
-├── pyproject.toml
-├── AGENTS.md                # entry instructions for AI coding tools
-├── CLAUDE.md                # Claude Code specific notes
-├── README.md
-├── SECURITY.md
-├── LICENSE                  # Apache 2.0
-└── .env.example
++-- agents/                  # ADK agents, Agent Engine facade, remote client
++-- engine/                  # deterministic simulation core; no LLM calls
++-- mcp/
+|   +-- market_data/         # Alpha Vantage daily/reference tools
+|   +-- news/                # Alpha Vantage news/sentiment tools
+|   +-- positioning/         # user CSV, SEC EDGAR, curated, synthetic evidence
++-- memory/                  # ADK MemoryService / Memory Bank facade
++-- rag/                     # local corpus retriever + Vertex AI Search adapter
++-- gateway/                 # FastAPI WebSocket hub and API routes
++-- web/                     # Next.js frontend
++-- docs/                    # architecture, contracts, platform, eval docs, replays
++-- eval/                    # backtest, holdout, latency, corpus evals
++-- scripts/                 # auth check, replay recording, deployed smoke, DB init
++-- tests/                   # offline-runnable unit/integration tests
++-- cloudbuild.*.yaml        # backend service image builds
++-- web/cloudbuild.yaml      # frontend image build
++-- docker-compose.yml       # local Postgres + Redis and service topology comments
++-- Dockerfile               # multi-target backend image
++-- Makefile
++-- pyproject.toml
++-- README.md
++-- AGENTS.md
 ```
 
-Makefile targets to provide, matching race-condition: `init`, `start`, `stop`, `restart`, `test`, `lint`, `fmt`, `build`, `eval`, `deploy`, `check-prereqs`.
+`infra/` currently contains placeholders rather than a complete Terraform stack.
+Long-lived GCP resources are documented in `docs/platform.md` and prepared as a
+manual/platform bootstrap step; normal app deploys should not silently create
+costly resources.
 
 ---
 
-## 10. Technology stack and deployment
+## 10. Deployment and CI/CD
 
-- Language: Python 3.13 for agents, engine, gateway, MCP. TypeScript for the frontend.
-- Orchestration: ADK (Python).
-- Models: Gemini via Vertex AI. Use a fast Gemini model for the archetype mood-setters (they run repeatedly) and a stronger Gemini model for the analyst and critic.
-- RAG: Vertex AI Search.
-- Memory: ADK MemoryService backed by Vertex AI Memory Bank, with pgvector as the local fallback. Holds calibration memory and scenario history across runs (section 7A).
-- Agents deploy to: Vertex AI Agent Engine (Agent Runtime).
-- Web services deploy to: Cloud Run (frontend, gateway, engine service, MCP servers).
-- Data: Cloud SQL Postgres with pgvector, Memorystore Redis.
-- Infra: Terraform, scales to zero by default to protect the $500 credit.
-- Local dev: docker-compose for Postgres, Redis, and mock data, so the system runs on a laptop with the deterministic baseline and no cloud cost.
+Pushes to `main` are deployed by `.github/workflows/deploy.yml`. The workflow
+updates existing Cloud Run services and the existing Agent Engine resource. The
+frontend service name must not change, because the public judging URL depends on
+it.
 
-Cost discipline for the $500 credit: develop against the deterministic baseline and cached replay so most work costs nothing. Only the live agent runs and the calibration backtest consume Gemini credits. Scale all Cloud Run services and the agents to zero between runs.
+Cloud Build configs:
+
+- `cloudbuild.engine.yaml`
+- `cloudbuild.gateway.yaml`
+- `cloudbuild.market-data-mcp.yaml`
+- `cloudbuild.news-mcp.yaml`
+- `cloudbuild.positioning-mcp.yaml`
+- `web/cloudbuild.yaml`
+
+The deployment order is backend services first, then Agent Engine, then gateway,
+then frontend. The deployed smoke script checks the public frontend, gateway
+health, cached replay, WebSocket cached/live runs, authenticated engine health,
+and MCP endpoint reachability.
+
+Local development can run without GCP credentials. Live Gemini requires:
+
+```bash
+gcloud auth application-default login
+make auth-check
+```
 
 ---
 
-## 11. Build plan
+## 11. Validation and Evaluation
 
-Phased so that there is a working, demonstrable vertical slice as early as possible, and the scoring essentials are in before the nice-to-haves. Given the time pressure, follow this order strictly.
+Use validation proportional to the change. Strong defaults for this repo:
 
-- Phase 0 — Scaffold. Repo structure, Makefile, docker-compose, pyproject, .env.example, CI skeleton, AGENTS.md and CLAUDE.md. Apache 2.0 license.
-- Phase 1 — Deterministic engine MVP. Order book, one instrument, the six agent types as deterministic agents driven by fixed stances, the metrics, and NDJSON record. No LLM. This alone produces a runnable cascade and is the backbone of the demo.
-- Phase 2 — ADK orchestration. Scenario author, the six archetype mood-setters as a ParallelAgent, the simulate LoopAgent wiring the archetypes to the engine, and the analyst. The two MCP servers. Sessions, state, runner.
-- Phase 3 — Frontend. Next.js plus shadcn. Scenario builder, the cascade and order-book visualisation, the metrics and explanation panels, the levers, and the cached-versus-live toggle. The FastAPI gateway with WebSocket streaming.
-- Phase 4 — Calibration and backtest. **Done.** The critic agent (`agents/critic/`) judges a run against the curated real CVNA 2022 episode on three timescale-fair axes, and a generator-critic loop (`eval/backtest.py`, `make eval`) re-runs an over-rational crowd until it reproduces the episode's behavioural signature. Deterministic stand-in for offline/CI; live Gemini judge for the narrative. This is the credibility and most of the findings section.
-- Phase 4A — Memory. Wire the ADK MemoryService and Vertex AI Memory Bank. Write scenario history on each run and read it in the analyst; persist the critic's calibration adjustments and read them at run start. Scenario history first, calibration memory second (section 7A).
-- Phase 5 — Deploy to Google Cloud. Agents to Agent Engine, services to Cloud Run, Cloud SQL and Redis, Terraform. Record a cached replay of the flagship scenario (CVNA, the late-2022 Carvana unwind) for the demo.
-- Phase 6 — Docs, diagram, eval, demo video, and the submission write-up fields.
+```bash
+python3 -m ruff check .
+python3 -m pytest
+git diff --check
+```
+
+For engine, liquidity, peer-crowding, or product-accuracy changes, also consider:
+
+```bash
+make eval
+make eval-discrimination-full
+make eval-holdout
+make eval-latency
+```
+
+For frontend changes:
+
+```bash
+cd web
+npm run build
+```
+
+The key credibility split is:
+
+- Calibration/backtest: tuned against known episodes such as CVNA 2022.
+- Holdout/discrimination: broader falsification across the committed public-case
+  corpus in `eval/episodes/`.
+- Latency: verifies the user-facing path does not require multi-minute waits.
+
+Report these separately. Do not present in-sample calibration as proof of
+general predictive accuracy.
+
+---
+
+## 12. Working Rules for Coding Agents
+
+- Prefer the existing contracts in `engine/schema.py` and `docs/contracts.md`.
+- Keep `gateway/run_config.py` as the live-run wiring seam.
+- Keep `agents/orchestrator/driver.py` and `gateway/replay.py` aligned when
+  changing live result shapes or replay frames.
+- Keep `mcp/positioning` evidence labels honest; inspect `selected_source`,
+  `peer_crowding.evidence_source`, `EGRESS_ENABLE_SEC_EDGAR`, `SEC_USER_AGENT`,
+  and ticker/CUSIP support before assuming peer evidence is broken.
+- Do not remove deterministic/offline fallbacks from tests or local workflows.
+- Do not claim paid feeds, Level 2 depth, real free float, prime-broker data, ETF
+  flows, options gamma, or securities-lending data unless the repo actually adds
+  those sources.
+- Keep README diagrams, `docs/platform.md`, and this file synchronized whenever
+  architecture changes.
+- Keep `main` deploy-safe. Push to `dev` first unless the user explicitly asks to
+  promote to `main`.
